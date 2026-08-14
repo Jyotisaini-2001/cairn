@@ -1,0 +1,394 @@
+<title>Loop — Hackathon Field Guide</title>
+<style>
+  :root {
+    --bg: #F2F4F6; --panel: #FFFFFF; --panel-2: #E9EDF0;
+    --ink: #141B24; --muted: #566170; --line: #D5DBE1;
+    --accent: #0E6B6A; --accent-ink: #0A5251; --accent-soft: #DCEBEA;
+    --amber: #B45309; --amber-soft: #F6E8D8;
+    --ok: #177245; --ok-soft: #DEEEE3;
+    --crit: #B3261E; --crit-soft: #F4DEDC;
+    --mono-bg: #1B2530; --mono-ink: #D9E4EE; --mono-accent: #7FD1C8;
+    --display: "Avenir Next", "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+    --body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F1519; --panel: #161E24; --panel-2: #1C262D;
+      --ink: #E6ECEF; --muted: #93A1AD; --line: #2A3640;
+      --accent: #5CBBB2; --accent-ink: #8AD6CE; --accent-soft: #14322F;
+      --amber: #E09A4E; --amber-soft: #3A2A14;
+      --ok: #6FBF8F; --ok-soft: #16301F;
+      --crit: #E2938C; --crit-soft: #3A1A17;
+      --mono-bg: #0B1014; --mono-ink: #C9D6E0; --mono-accent: #6FC7BE;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1519; --panel: #161E24; --panel-2: #1C262D;
+    --ink: #E6ECEF; --muted: #93A1AD; --line: #2A3640;
+    --accent: #5CBBB2; --accent-ink: #8AD6CE; --accent-soft: #14322F;
+    --amber: #E09A4E; --amber-soft: #3A2A14;
+    --ok: #6FBF8F; --ok-soft: #16301F;
+    --crit: #E2938C; --crit-soft: #3A1A17;
+    --mono-bg: #0B1014; --mono-ink: #C9D6E0; --mono-accent: #6FC7BE;
+  }
+  :root[data-theme="light"] {
+    --bg: #F2F4F6; --panel: #FFFFFF; --panel-2: #E9EDF0;
+    --ink: #141B24; --muted: #566170; --line: #D5DBE1;
+    --accent: #0E6B6A; --accent-ink: #0A5251; --accent-soft: #DCEBEA;
+    --amber: #B45309; --amber-soft: #F6E8D8;
+    --ok: #177245; --ok-soft: #DEEEE3;
+    --crit: #B3261E; --crit-soft: #F4DEDC;
+    --mono-bg: #1B2530; --mono-ink: #D9E4EE; --mono-accent: #7FD1C8;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--body); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ── hero ── */
+  header { padding: 72px 0 40px; display: flex; gap: 28px; align-items: center; }
+  .ring {
+    flex: 0 0 84px; width: 84px; height: 84px; border-radius: 50%;
+    background: conic-gradient(from 220deg, var(--accent) 0 68%, var(--panel-2) 68% 100%);
+    position: relative; animation: spin 14s linear infinite;
+  }
+  .ring::after {
+    content: ""; position: absolute; inset: 14px; border-radius: 50%; background: var(--bg);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .ring { animation: none; } }
+  h1 {
+    font-family: var(--display); font-size: clamp(34px, 6vw, 46px); font-weight: 650;
+    letter-spacing: -0.02em; margin: 0 0 6px; text-wrap: balance; line-height: 1.1;
+  }
+  .tagline { color: var(--muted); margin: 0; max-width: 56ch; }
+  .tagline strong { color: var(--accent-ink); font-weight: 600; }
+
+  /* ── sections stitched by a thread ── */
+  section { border-left: 2px solid var(--line); padding: 8px 0 8px 28px; margin: 40px 0; position: relative; }
+  section::before {
+    content: ""; position: absolute; left: -7px; top: 14px; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
+  }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent-ink); margin: 0 0 6px;
+  }
+  h2 {
+    font-family: var(--display); font-size: 26px; font-weight: 650; letter-spacing: -0.015em;
+    margin: 0 0 14px; text-wrap: balance;
+  }
+  h3 { font-family: var(--display); font-size: 18px; font-weight: 600; margin: 22px 0 8px; }
+  p { max-width: 68ch; margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  small.note { display: block; color: var(--muted); font-size: 13.5px; max-width: 70ch; }
+
+  /* ── pitch card ── */
+  .pitch {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 22px 26px; font-size: 17px;
+  }
+  .pitch p { max-width: 66ch; }
+  .pitch .beat { color: var(--accent-ink); font-weight: 600; }
+
+  /* ── capability rows: trigger → behavior ── */
+  .cap { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: 0; margin: 14px 0;
+         border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+  .cap .trig {
+    background: var(--mono-bg); color: var(--mono-ink); font-family: var(--mono);
+    font-size: 13.5px; line-height: 1.55; padding: 16px 18px; overflow-x: auto;
+  }
+  .cap .trig b { color: var(--mono-accent); font-weight: 600; }
+  .cap .what { padding: 14px 20px; }
+  .cap .what h4 { margin: 0 0 4px; font-family: var(--display); font-size: 16px; font-weight: 600; }
+  .cap .what p { font-size: 15px; margin: 0 0 6px; color: var(--ink); }
+  .cap .wow { font-size: 13.5px; color: var(--accent-ink); }
+  .cap .wow::before { content: "wow factor · "; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+  @media (max-width: 640px) { .cap { grid-template-columns: 1fr; } }
+
+  /* ── demo run order (a real sequence) ── */
+  ol.demo { counter-reset: step; list-style: none; padding: 0; margin: 0; }
+  ol.demo li { counter-increment: step; display: flex; gap: 16px; padding: 12px 0; border-bottom: 1px dashed var(--line); }
+  ol.demo li:last-child { border-bottom: none; }
+  ol.demo li::before {
+    content: counter(step, decimal-leading-zero); font-family: var(--mono); font-size: 13px;
+    color: var(--accent-ink); flex: 0 0 30px; padding-top: 3px;
+  }
+  ol.demo b { font-weight: 600; }
+  ol.demo .say { font-family: var(--mono); font-size: 13px; background: var(--panel-2); border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
+
+  /* ── mental map ── */
+  .map { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 760px) { .map { grid-template-columns: 1fr; } }
+  .col { border-radius: 10px; padding: 16px 18px; border: 1px solid var(--line); background: var(--panel); }
+  .col h4 { margin: 0 0 2px; font-family: var(--display); font-size: 16px; font-weight: 650; }
+  .col .def { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; }
+  .col ul { margin: 0; padding-left: 18px; font-size: 14px; }
+  .col li { margin-bottom: 9px; }
+  .col.k   { border-top: 3px solid var(--ok); }
+  .col.ku  { border-top: 3px solid var(--amber); }
+  .col.uu  { border-top: 3px solid var(--crit); }
+  .chip { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+          text-transform: uppercase; border-radius: 4px; padding: 2px 8px; margin-bottom: 10px; }
+  .k .chip  { background: var(--ok-soft); color: var(--ok); }
+  .ku .chip { background: var(--amber-soft); color: var(--amber); }
+  .uu .chip { background: var(--crit-soft); color: var(--crit); }
+
+  /* ── tables ── */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th { text-align: left; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em;
+       text-transform: uppercase; color: var(--muted); padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  td { padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td code, p code, li code { font-family: var(--mono); font-size: 0.88em; background: var(--panel-2);
+    border-radius: 4px; padding: 1px 6px; }
+
+  /* ── checklist ── */
+  .check { background: var(--amber-soft); border: 1px solid var(--amber); border-radius: 10px; padding: 18px 22px; }
+  .check h3 { margin-top: 0; color: var(--amber); }
+  .check ul { margin: 0; padding-left: 20px; font-size: 15px; }
+  .check li { margin-bottom: 8px; }
+
+  .qa dt { font-weight: 650; font-family: var(--display); margin-top: 16px; }
+  .qa dd { margin: 4px 0 0 0; color: var(--ink); max-width: 68ch; font-size: 15px; }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: 13px; font-family: var(--mono); }
+  a { color: var(--accent-ink); }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="ring" aria-hidden="true"></div>
+  <div>
+    <h1>Loop — the teammate that never drops the thread</h1>
+    <p class="tagline">A Slack-native AI agent with <strong>long-term memory</strong>, <strong>Jira reflexes</strong>, and
+    <strong>full observability</strong> — running on any model provider you point it at. Today: MiniMax&nbsp;M3.</p>
+  </div>
+</header>
+
+<section>
+  <p class="eyebrow">The pitch · 90 seconds</p>
+  <h2>Say this to the judges</h2>
+  <div class="pitch">
+    <p><span class="beat">Problem.</span> Teams make decisions in Slack and lose them in Slack. Bugs get described in a thread,
+    then someone has to re-type them into Jira, guess the priority, and hunt down who owns it. The knowledge evaporates;
+    the busywork stays.</p>
+    <p><span class="beat">What Loop does.</span> Loop lives inside the conversation. Mention a bug and it stages a Jira ticket —
+    title, priority, project, and the assignee resolved <em>from a first name</em> to a real Jira account. Say
+    "remember this" and it's stored with provenance: who said it, where, and when. Ask "what did we decide about the database?"
+    weeks later and it answers — even if you phrase it completely differently, because recall is semantic, not keyword.</p>
+    <p><span class="beat">Why it's different.</span> This isn't a wrapper around one vendor. The provider is an environment
+    variable — Anthropic, MiniMax, OpenAI, Bedrock, Ollama — same brain, your choice of muscle. And it's built like a
+    production system, not a demo: every interaction writes structured telemetry, every model call and tool call is traced,
+    the model's own reasoning is persisted for audit, and a golden-set eval suite gates every feature.</p>
+    <p><span class="beat">The line to land.</span> "Slack AI answers questions about your workspace. Loop <em>does the work</em>
+    that comes out of the conversation — and shows its receipts."</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Capabilities · how to trigger each one</p>
+  <h2>The trigger card</h2>
+  <p class="muted">Left side is literally what you type in Slack. Right side is what happens and why it impresses.</p>
+
+  <div class="cap">
+    <div class="trig"><b>@Rasputin_Loop</b> The checkout page throws a 500 when applying a coupon. ishan should fix this.</div>
+    <div class="what">
+      <h4>Bug → staged Jira ticket</h4>
+      <p>Regex gate catches bug language instantly, a focused model call extracts title / priority / owner / project,
+      a dedup search checks for an existing ticket, then Loop posts the staged ticket and waits for confirmation.</p>
+      <p class="wow">"ishan" — a bare first name — is resolved through the workspace member list to an email, then to a
+      Jira accountId. Nobody typed an email. Unresolvable name? Filed unassigned with a visible flag — it never guesses.</p>
+    </div>
+  </div>
+
+  <div class="cap">
+    <div class="trig"><b>@Rasputin_Loop</b> yes<br><span style="opacity:.55">(as a reply, in the staged ticket's thread)</span></div>
+    <div class="what">
+      <h4>Confirm → real ticket, assigned</h4>
+      <p>The staged ticket is created via the Jira REST API: project resolved against live projects (a typo'd project
+      falls back safely instead of erroring), Slack IDs in the description rewritten to human names, link posted back.</p>
+      <p class="wow">Human-in-the-loop by design — the agent proposes, a person disposes. Judges care about that.</p>
+    </div>
+  </div>
+
+  <div class="cap">
+    <div class="trig"><b>@Loop</b> remember: we're going with Postgres for the events service, decided in today's standup</div>
+    <div class="what">
+      <h4>Durable memory with provenance</h4>
+      <p>Stored in a hybrid store: SQLite FTS5 (BM25) fused with a libSQL vector index (local fastembed embeddings, no
+      API key) via reciprocal-rank fusion. Author, channel, team, and date are stamped automatically.</p>
+      <p class="wow">Recall cites its source: "per @alice in #infra on 2026-06-20 …"</p>
+    </div>
+  </div>
+
+  <div class="cap">
+    <div class="trig"><b>@Loop</b> what did we settle on for the events database?</div>
+    <div class="what">
+      <h4>Semantic recall across wording</h4>
+      <p>"Settle on" never appears in the stored memory — the vector leg finds it anyway; memories are auto-injected
+      into context before the model answers, so recall is passive, not a tool the model must remember to call.</p>
+      <p class="wow">Ask the judges to rephrase the question themselves — it still lands.</p>
+    </div>
+  </div>
+
+  <div class="cap">
+    <div class="trig">Jaimin will update the pricing page by Friday<br><span style="opacity:.55">(plain channel message — no @mention needed; LOOP_ACTION_ITEMS=on)</span></div>
+    <div class="what">
+      <h4>Passive action-item capture</h4>
+      <p>Loop observes commitments in channels it's in, extracts owner / task / deadline, stores them, and adds a 📋
+      reaction so the room knows it was caught. Ambient mode nudges owners as deadlines approach.</p>
+      <p class="wow">Zero-effort capture: nobody invoked the bot at all.</p>
+    </div>
+  </div>
+
+  <div class="cap">
+    <div class="trig"><b>/loop</b> give me a digest of recent memory<br><br><b>DM</b> the bot directly — same brain</div>
+    <div class="what">
+      <h4>Three more doors to one agent</h4>
+      <p>Slash command, DM, and the native Slack Assistant pane (suggested prompts + "is thinking…" status) all route to
+      the same single Strands agent. No intent router, no command grammar — the agent is the only brain.</p>
+      <p class="wow">Attach an image, a PDF, or code to any of them — multimodal in, answers about your file out.</p>
+    </div>
+  </div>
+
+  <div class="cap">
+    <div class="trig">LOOP_AMBIENT=on<br><span style="opacity:.55">(env — the proactive mode)</span></div>
+    <div class="what">
+      <h4>Ambient PM mode</h4>
+      <p>A background daemon finds threads that went quiet without resolution and posts one polite, context-aware nudge —
+      with a re-nudge guard, per-scan cost caps, and a channel allow-list.</p>
+      <p class="wow">It may <em>suggest</em> a Jira ticket but never files one on its own — restraint is a feature.</p>
+    </div>
+  </div>
+
+  <div class="cap">
+    <div class="trig">sqlite3 data/loop.db<br>"SELECT entrypoint, tool_calls,<br> reasoning, latency_ms<br> FROM interactions"</div>
+    <div class="what">
+      <h4>Observability as a first-class feature</h4>
+      <p>Every interaction: one JSON log line + a DB row with tokens, tools, latency, outcome — and the model's private
+      chain-of-thought, stripped from the reply but persisted for audit. Every step (model call, tool call, reasoning)
+      is traced. Evals run against a golden set and record results over time.</p>
+      <p class="wow">Show a judge the <code>reasoning</code> column for the ticket they just filed. Nobody else demos that.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Demo · run order</p>
+  <h2>Seven minutes, scripted</h2>
+  <ol class="demo">
+    <li><div><b>Cold open in Slack, not slides.</b> Post <span class="say">@Rasputin_Loop payments API returns 500 on refunds, users blocked. Jyoti should fix this</span> — staged ticket appears with priority High and assignee resolved.</div></li>
+    <li><div><b>Confirm in-thread</b> with <span class="say">@Rasputin_Loop yes</span> → open the Jira link it returns; show the assignee's real account on the ticket.</div></li>
+    <li><div><b>Plant a memory</b>: <span class="say">@Loop remember: refunds run through the new ledger service starting next sprint</span>.</div></li>
+    <li><div><b>Let a judge phrase the recall</b> however they like — <span class="say">@Loop how are refunds being handled going forward?</span> — provenance-cited answer.</div></li>
+    <li><div><b>Flip to the terminal.</b> One query on <code>interactions</code>: tokens, latency, tools, and the model's persisted reasoning for the exact turns the judges just watched.</div></li>
+    <li><div><b>The provider punchline.</b> Show <code>.env</code>: "this entire demo ran on MiniMax M3 through an Anthropic-compatible endpoint. Changing vendors is editing one line." </div></li>
+    <li><div><b>Close on the niche slide</b> (below) — 30 seconds, then questions.</div></li>
+  </ol>
+  <small class="note">Rehearsal tip: reply "yes" <em>in the thread</em>, not as a new mention — staging is keyed by thread. And kill every stray Loop process before you demo; Socket Mode will happily split events between two instances.</small>
+</section>
+
+<section>
+  <p class="eyebrow">Positioning · the niche</p>
+  <h2>Where Loop sits</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th></th><th>Slack AI (native)</th><th>Claude Tag–style products</th><th>Loop</th></tr></thead>
+    <tbody>
+      <tr><td><b>Does work, not just answers</b></td><td>Summaries &amp; search</td><td>Yes, in-vendor</td><td>Yes — Jira, action items, memory, nudges</td></tr>
+      <tr><td><b>Model choice</b></td><td>Fixed</td><td>Single vendor</td><td>Env-selected: Anthropic, MiniMax, OpenAI, Bedrock, Ollama, Gemini</td></tr>
+      <tr><td><b>Self-hostable</b></td><td>No</td><td>No</td><td>Yes — one Python process, local SQLite, local embeddings</td></tr>
+      <tr><td><b>Auditability</b></td><td>Opaque</td><td>Opaque</td><td>Every turn traced; reasoning persisted; eval suite in-repo</td></tr>
+      <tr><td><b>Cost profile</b></td><td>Seat pricing</td><td>Premium API</td><td>Your provider's rates; cheap models routable to background work</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="margin-top:14px">The niche in one sentence: <b>the open, provider-agnostic, self-hostable teammate for teams
+  that want Slack-native AI without giving their conversation data — or their vendor choice — away.</b></p>
+</section>
+
+<section>
+  <p class="eyebrow">Mental map · what we know we know</p>
+  <h2>Knowns, known unknowns, unknowns</h2>
+  <div class="map">
+    <div class="col k">
+      <span class="chip">Knowns</span>
+      <p class="def">Verified live this session, with request-ids in the logs.</p>
+      <ul>
+        <li>Both apps (Loop + Rasputin_Loop) connect and answer; bot identities self-register at startup.</li>
+        <li>Bug → stage → confirm → Jira create works end-to-end: <b>KAN-22 filed live, assigned to "ishan" from the bare name</b> (unknown names → unassigned, never a default email; the "reporter" is always the API token's owner — Jira auth semantics).</li>
+        <li>Model reasoning is captured again (thinking blocks must now be requested — fixed) and persisted per turn.</li>
+        <li>Hybrid memory saves + semantically recalls with provenance; channel isolation holds (verified after fixing an eval artifact that faked a leak); vector DB healthy.</li>
+        <li>46/46 unit tests green; golden set 26/29 (89.7%) on MiniMax M3 after the runner was fixed to score truthfully — the 3 misses are two known M3-nondeterminism flakes plus one case that exposed (and now guards) staging-vs-create escalation. Secrets never committed to git history.</li>
+      </ul>
+    </div>
+    <div class="col ku">
+      <span class="chip">Known unknowns</span>
+      <p class="def">Named risks — go measure before submission.</p>
+      <ul>
+        <li><b>The ghost process.</b> An old Loop instance on another machine shares the Rasputin token and answers ~half of events with pre-fix code. Rotate the app-level tokens to evict it, then re-verify.</li>
+        <li>Marketplace review: Socket Mode apps and multi-workspace OAuth have listing requirements Loop hasn't been tested against (org-wide install, event scaling, privacy policy URL, support channel).</li>
+        <li>MiniMax M3 tool-calling reliability on rare phrasings (the deterministic bug-gate exists precisely because prompts alone were flaky).</li>
+        <li>Memory at scale: recall quality past a few thousand entries is unmeasured; near-duplicate (re-phrased) memories still accumulate.</li>
+        <li>Ambient mode etiquette in a busy workspace — nudge frequency is capped but unmeasured against real traffic.</li>
+      </ul>
+    </div>
+    <div class="col uu">
+      <span class="chip">Unknowns</span>
+      <p class="def">Where surprises will come from — watch these seams.</p>
+      <ul>
+        <li>Endpoint drift: MiniMax silently changed how thinking is delivered once already; any compatible-API vendor can drift again.</li>
+        <li>Conversation history is shared per app: the agent's raw chat history spans all channels/users until restart. Memory recall is channel-scoped; history is not — the privacy seam to close before multi-workspace distribution.</li>
+        <li>Concurrent-team behavior: memory scoping is per-channel/team, but true multi-tenant isolation (per-workspace DBs, authz) is designed, not built.</li>
+        <li>Long-running process health: reconnect storms, Slack rate limits, SQLite contention under real multi-channel load.</li>
+        <li>Prompt-injection via message content or attachments into the agent's tool calls — guardrails block risky Slack methods, but the surface is broader than that.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Before demo day</p>
+  <h2>The do-not-skip checklist</h2>
+  <div class="check">
+    <h3>30 minutes that save the demo</h3>
+    <ul>
+      <li><b>Rotate the app-level tokens</b> (both apps) → evicts the ghost process. Then <code>auth.test</code> and one smoke mention.</li>
+      <li><b>Rotate every secret</b> that was ever shared in chat: Slack bot tokens, MiniMax key, Jira API token.</li>
+      <li>Run exactly <b>one</b> <code>loop</code> process. Check <code>ps</code> first. Watch the log while demoing.</li>
+      <li>Decide ambient: <code>LOOP_AMBIENT=off</code> for a tight demo, or on with a 0-hour stale window for the wow moment — never both apps at once.</li>
+      <li>Never <code>git checkout / stash</code> while the app is running (DBs are untracked now, but the habit matters).</li>
+      <li>Pre-create the demo channel, invite both bots, verify Event Subscriptions (<code>app_mention</code>, <code>message.im</code>) on both apps.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Judge Q&amp;A · likely questions, ready answers</p>
+  <h2>Ammunition</h2>
+  <dl class="qa">
+    <dt>"How is this different from Slack's built-in AI?"</dt>
+    <dd>Slack AI reads your workspace; Loop acts on it — files the ticket, tracks the commitment, remembers the decision — and it's self-hosted, so conversation data never leaves your infrastructure.</dd>
+    <dt>"What happens when the model hallucinates a ticket?"</dt>
+    <dd>It can't file one — creation requires a human "yes" in-thread. And every turn's reasoning is persisted, so you can audit exactly why it proposed what it proposed.</dd>
+    <dt>"Why should we trust the memory?"</dt>
+    <dd>Every memory carries provenance — author, channel, date — and recall cites it. It's not an embedding soup; it's an auditable record.</dd>
+    <dt>"What's the moat?"</dt>
+    <dd>Provider-agnosticism plus the production harness. The agent is ~15 small files; the value is the eval suite, tracing, guardrails, and memory design around it — the parts demos usually skip.</dd>
+    <dt>"What breaks first at scale?"</dt>
+    <dd>Honest answer: SQLite under multi-workspace write load and memory recall precision past ~10k entries. Both have named migration paths (per-workspace DBs, reranking) — see the roadmap in progress.md.</dd>
+  </dl>
+</section>
+
+<footer>
+  loop · session/marketplace-prep · generated 2026-07-10 · triggers verified live against the Rasputin workspace
+</footer>
+</div>

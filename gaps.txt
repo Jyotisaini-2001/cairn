@@ -1,0 +1,148 @@
+SLACK CAPABILITY GAPS — EXPLORATION NOTES
+==========================================
+
+Purpose: map where Slack lags today, for an experiment around agentic
+capabilities (Slack AI, MCP integration, Real-Time Search). Understanding
+phase only — not yet choosing what to build.
+
+Format per gap:  TODAY (what Slack does now)  →  LAGS (the opening)
+
+------------------------------------------------------------------
+A. BUG / REQUEST -> TICKET AUTOMATION  (the Workflow Builder area)
+------------------------------------------------------------------
+TODAY: Workflow Builder + Jira app turns a FORM submission into a Jira ticket.
+LAGS:
+  - Must be manually triggered and filled via a fixed form.
+  - No understanding — can't tell a bug from chit-chat or read a normal message.
+  - Can't extract title / severity / steps-to-reproduce from plain language.
+  - No de-duplication (won't notice a bug already filed).
+  - No routing/judgment (priority, right project, right assignee).
+  - One-way — Jira updates don't flow back into the thread intelligently.
+
+------------------------------------------------------------------
+B. THREADS & KNOWLEDGE FINDABILITY
+------------------------------------------------------------------
+TODAY: Keyword search; "Recap" gives a basic catch-up.
+LAGS:
+  - Decisions get buried in threads, unfindable later.
+  - Search needs exact words, not meaning ("what did we decide about auth?").
+  - No synthesized answer across scattered messages / files / canvases.
+  - Same questions re-asked because past answers aren't surfaced.
+
+------------------------------------------------------------------
+C. MEETINGS & HUDDLES RECORDING
+------------------------------------------------------------------
+TODAY: Huddles have limited / no proper recording.
+LAGS:
+  - Can't reliably record a meeting / huddle for later.
+  - No saved, replayable, searchable meeting record tied to the channel.
+
+------------------------------------------------------------------
+D. TRANSCRIPTION ACCURACY  (e.g. "Jyoti" -> "Jyoiee")
+------------------------------------------------------------------
+TODAY: Auto-transcription exists but is error-prone.
+LAGS:
+  - Mis-hears names and domain / technical terms (repos, products, jargon).
+  - Doesn't use the workspace member list / glossary to self-correct.
+  - Bad transcript -> bad notes -> bad search later (cascades into B and E).
+
+------------------------------------------------------------------
+E. AI NOTES LACKING CONTEXT
+------------------------------------------------------------------
+TODAY: Auto-summaries give a shallow recap.
+LAGS:
+  - Misses the "why" behind decisions.
+  - Weak at action items (who owns what, by when).
+  - Doesn't link notes back to the relevant channel / thread / project.
+
+------------------------------------------------------------------
+F. MANUAL DATA MOVEMENT BETWEEN SLACK AND OTHER TOOLS
+------------------------------------------------------------------
+TODAY: Connectors (Jira, etc.) + Workflow Builder cover some fixed cases.
+LAGS:
+  - Lots of info still hand-copied into Jira / GitHub / CRM / docs.
+  - No smart two-way sync; same info maintained in two places.
+  - Only works for pre-wired forms, not natural messages.
+
+------------------------------------------------------------------
+G. PROACTIVE INTELLIGENCE  (Slack rarely tells you things)
+------------------------------------------------------------------
+TODAY: Slack is reactive — notifications, but no insight.
+LAGS:
+  - No pattern alerts ("3 people hit the same bug this week").
+  - No nudges ("this thread's waiting on your reply for 2 days", "request is stale").
+  - No "what mattered while you were away" intelligent digest.
+
+------------------------------------------------------------------
+H. WORKFLOWS BEYOND FIXED RULES
+------------------------------------------------------------------
+TODAY: Workflow Builder = rule-based, if-this-then-that, form-driven.
+LAGS:
+  - Can't reason or decide across steps.
+  - Can't handle messy / varied input.
+  - Multi-step processes (approvals, onboarding, triage) still need fixed forms.
+
+------------------------------------------------------------------
+I. ONBOARDING / "HOW DO WE DO X HERE"
+------------------------------------------------------------------
+TODAY: New hires dig through old threads and ask people.
+LAGS:
+  - No agent to answer "where's the doc for Y / how do we do X" from org knowledge.
+  - Tribal knowledge stuck in heads and old threads.
+
+------------------------------------------------------------------
+J. CROSS-CHANNEL / BIG-PICTURE VISIBILITY
+------------------------------------------------------------------
+TODAY: Each channel is its own silo.
+LAGS:
+  - Hard to see across many channels at once.
+  - Related conversations in different channels aren't connected.
+
+------------------------------------------------------------------
+K. ACTION-ITEM & ACCOUNTABILITY TRACKING
+------------------------------------------------------------------
+TODAY: Action items said in threads, then forgotten.
+LAGS:
+  - No tracking of "what was decided / who committed to what".
+  - Hard to produce a record ("show me decisions from last week").
+
+------------------------------------------------------------------
+L. ACCESSIBILITY & INCLUSION  (possible angle)
+------------------------------------------------------------------
+TODAY: Captions / transcripts exist but quality is weak (ties to D).
+LAGS:
+  - Poor caption / transcript quality affects people who rely on them.
+  - No easy translation / plain-language summary for varied users.
+
+==================================================================
+HOW TO READ THIS MAP
+==================================================================
+Tag each gap one of three ways while exploring:
+  GREEN  — already mostly handled by Slack (don't rebuild):
+           basic search, basic notifications, fixed form->ticket workflows.
+  YELLOW — partly handled but rigid/shallow (the real openings):
+           A (ticket automation), E (notes context), F (manual copy),
+           H (rule-only workflows).
+  RED    — barely handled / missing:
+           C (recording), D (transcription accuracy), G (proactive insight),
+           K (accountability tracking).
+
+COMMON ROOT across almost all of them:
+  Slack does FIXED, REACTIVE, KEYWORD-BASED things well, but lacks
+  UNDERSTANDING + PROACTIVITY. That single missing capability shows up as
+  many different annoyances.
+
+THE 12 COLLAPSE INTO 3 ROOT GAPS:
+  1. KNOWLEDGE   — conversations go in, but you can't get the meaning back out.
+                   (covers B, C, D, E, I, K)
+  2. AUTOMATION  — only fixed recipes, not "understand and act."
+                   (covers A, F, H)
+  3. PROACTIVITY — it reacts; it never tells you something useful first.
+                   (covers G, J)
+
+NEXT STEP (not yet decided):
+  Score gaps by: how often it bites us, how many people it hits, and how
+  realistic to build given what we already have (Adapts data, Jira, etc.).
+</content>
+
+

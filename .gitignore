@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Runtime state — NEVER commit the live databases. A git checkout/stash that
+# rewrites a .db under a running process swaps its inode and wedges every open
+# connection ("attempt to write a readonly database"). Local data stays local.
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Env / secrets (never commit real tokens)
+.env
+.env.local
+
+# Claude Code local config — not part of the project
+.claude/
+
+# Placeholder / scratch dirs
+slack_events/
+
+# Reference images (kept out of the repo)
+5_Pillars_of_production_AI.png
+Observability_study_ROI.png
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

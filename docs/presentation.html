@@ -1,0 +1,178 @@
+<title>Loop — Presentation</title>
+<style>
+  :root {
+    --bg: #0B0F14; --bg-lift: #10161D; --ink: #F3EFE6; --dim: #8B97A3;
+    --gold: #C9A55C; --gold-soft: #8A7440; --line: #232B33;
+    --serif: "Iowan Old Style", "Palatino Nova", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-snap-type: y proximity; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--serif); line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .slide {
+    min-height: 96vh; display: flex; flex-direction: column; justify-content: center;
+    padding: 8vh 8vw; scroll-snap-align: start; position: relative;
+    border-bottom: 1px solid var(--line); max-width: 100%;
+  }
+  .folio {
+    position: absolute; top: 5vh; right: 8vw; font-family: var(--mono);
+    font-size: 12px; letter-spacing: 0.2em; color: var(--gold-soft);
+  }
+  .kicker {
+    font-family: var(--sans); font-size: 13px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--gold); margin: 0 0 28px;
+  }
+  h1, h2 { font-weight: 400; letter-spacing: -0.01em; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(52px, 8.5vw, 108px); line-height: 1.04; }
+  h2 { font-size: clamp(36px, 5.5vw, 68px); line-height: 1.1; }
+  .lede {
+    font-size: clamp(19px, 2vw, 25px); color: var(--dim); max-width: 30em;
+    margin: 34px 0 0; font-family: var(--serif);
+  }
+  .lede em { color: var(--ink); font-style: italic; }
+  .gold { color: var(--gold); }
+
+  /* title ring — a single, quiet loop */
+  .ring {
+    width: clamp(90px, 11vw, 140px); height: clamp(90px, 11vw, 140px);
+    border-radius: 50%; border: 1.5px solid var(--gold);
+    border-right-color: transparent; transform: rotate(-30deg);
+    margin-bottom: 8vh;
+  }
+
+  /* verb triptych */
+  .verbs { display: flex; flex-direction: column; gap: 7vh; margin-top: 6vh; }
+  .verb  { display: grid; grid-template-columns: minmax(180px, 320px) 1fr; gap: 4vw; align-items: baseline; }
+  .verb h3 { font-size: clamp(34px, 4.5vw, 56px); font-weight: 400; margin: 0; color: var(--gold); font-style: italic; }
+  .verb p  { font-size: clamp(17px, 1.7vw, 22px); color: var(--ink); margin: 0; max-width: 34em; }
+  .verb p small { display: block; color: var(--dim); margin-top: 8px; font-size: 0.8em; }
+  @media (max-width: 640px) { .verb { grid-template-columns: 1fr; gap: 10px; } }
+
+  /* demo moments */
+  .moments { display: flex; flex-direction: column; gap: 5vh; margin-top: 5vh; }
+  .moment  { border-left: 1px solid var(--gold-soft); padding-left: 28px; }
+  .moment .say {
+    font-family: var(--mono); font-size: clamp(13px, 1.3vw, 16px); color: var(--gold);
+    display: block; margin-bottom: 12px; overflow-x: auto; white-space: nowrap;
+  }
+  .moment p { margin: 0; font-size: clamp(17px, 1.7vw, 21px); max-width: 36em; }
+  .moment p b { font-weight: 600; }
+
+  /* numbers strip */
+  .figures { display: flex; flex-wrap: wrap; gap: 6vw; margin-top: 7vh; }
+  .fig .n {
+    font-size: clamp(44px, 6vw, 84px); line-height: 1; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .fig .n span { color: var(--gold); }
+  .fig .l {
+    font-family: var(--sans); font-size: 13px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--dim); margin-top: 12px; display: block;
+  }
+
+  .close-line { margin-top: 6vh; font-family: var(--mono); font-size: 13px; color: var(--dim); letter-spacing: 0.06em; }
+  .close-line b { color: var(--gold); font-weight: 500; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .slide > * { animation: rise 0.7s ease both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+
+<section class="slide">
+  <span class="folio">01 / 07</span>
+  <div class="ring" aria-hidden="true"></div>
+  <h1>Loop<span class="gold">.</span></h1>
+  <p class="lede">The teammate that never drops the thread — a Slack-native AI agent with
+  <em>long-term memory</em>, <em>Jira reflexes</em>, and <em>receipts for every decision it makes</em>.</p>
+</section>
+
+<section class="slide">
+  <span class="folio">02 / 07</span>
+  <p class="kicker">The problem</p>
+  <h2>Decisions are made in Slack.<br>Then they're <span class="gold">lost</span> in Slack.</h2>
+  <p class="lede">A bug gets described in a thread — someone re-types it into Jira, guesses the priority,
+  hunts down an owner. Three weeks later nobody remembers what was decided, or why.
+  The knowledge evaporates. <em>The busywork stays.</em></p>
+</section>
+
+<section class="slide">
+  <span class="folio">03 / 07</span>
+  <p class="kicker">What Loop does</p>
+  <div class="verbs">
+    <div class="verb">
+      <h3>Remembers</h3>
+      <p>Decisions and commitments are stored with provenance — who said it, where, and when —
+      and recalled semantically, however you re-phrase the question.
+      <small>Even from channels nobody @mentioned it in.</small></p>
+    </div>
+    <div class="verb">
+      <h3>Acts</h3>
+      <p>Describe a bug and it stages a Jira ticket — priority, project, and the assignee resolved
+      from a first name to a real account. A human says <i>yes</i>; the ticket exists.
+      <small>Proposes, never presumes. Filed live on stage today: KAN-22.</small></p>
+    </div>
+    <div class="verb">
+      <h3>Shows its work</h3>
+      <p>Every turn writes telemetry: tokens, tools, latency — and the model's own reasoning,
+      hidden from the room but kept for audit.
+      <small>Observable. Debuggable. Improvable.</small></p>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <span class="folio">04 / 07</span>
+  <p class="kicker">Three moments to watch</p>
+  <div class="moments">
+    <div class="moment">
+      <span class="say">@Rasputin_Loop payments API 500s on refunds, users blocked. Jyoti should fix this</span>
+      <p><b>Name → ticket.</b> "Jyoti" becomes a real Jira assignee — workspace lookup, email, account id.
+      Nobody typed an email. An unknown name files unassigned; it never guesses.</p>
+    </div>
+    <div class="moment">
+      <span class="say">@Loop how are refunds handled going forward?</span>
+      <p><b>Recall across wording.</b> The stored decision never used the word "handled" —
+      semantic memory finds it and cites its source: <i>per @ishan in #eng, 2026-07-10</i>.</p>
+    </div>
+    <div class="moment">
+      <span class="say">sqlite3 data/loop.db "SELECT reasoning FROM interactions …"</span>
+      <p><b>The receipts.</b> The model's private deliberation for the exact turn the judges
+      just watched — persisted, auditable, never leaked into the room.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <span class="folio">05 / 07</span>
+  <p class="kicker">Why it's different</p>
+  <h2>The only vendor lock-in<br>is an <span class="gold">environment variable</span>.</h2>
+  <p class="lede">This demo runs on MiniMax M3 through an Anthropic-compatible endpoint. The same agent
+  runs on Claude, GPT, Bedrock, Gemini, or a local Ollama model — <em>change one line of .env</em>.
+  Self-hosted, one Python process, local SQLite, local embeddings. Your conversations never leave your infrastructure.</p>
+</section>
+
+<section class="slide">
+  <span class="folio">06 / 07</span>
+  <p class="kicker">Built like production, not a demo</p>
+  <div class="figures">
+    <div class="fig"><div class="n">46<span>/46</span></div><span class="l">unit tests green</span></div>
+    <div class="fig"><div class="n">26<span>/29</span></div><span class="l">golden evals · truthfully scored</span></div>
+    <div class="fig"><div class="n">6</div><span class="l">model providers, one agent</span></div>
+    <div class="fig"><div class="n">0</div><span class="l">external services for memory</span></div>
+  </div>
+  <p class="lede">Guardrails cap tool calls and token spend. Evals gate every feature.
+  Telemetry catches drift before users do — <em>that discipline is the product.</em></p>
+</section>
+
+<section class="slide" style="border-bottom:none">
+  <span class="folio">07 / 07</span>
+  <h2>Slack-native.<br>Provider-free.<br><span class="gold">Production-honest.</span></h2>
+  <p class="lede">Slack AI answers questions about your workspace.
+  <em>Loop does the work that comes out of the conversation — and shows its receipts.</em></p>
+  <p class="close-line"><b>loop</b> · github.com/Allmight-456 · built on Strands Agents · running on MiniMax M3</p>
+</section>
