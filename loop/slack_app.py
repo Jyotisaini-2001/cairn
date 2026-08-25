@@ -368,6 +368,32 @@ def _thread_history(client, channel: str, thread_ts: str, current_ts: str,
     return turns
 
 
+def _capture_conversation(client, event: dict, cfg: "AppConfig") -> None:
+    """Distil the conversation around an observed decision into one memory.
+
+    Reads the thread when the message is in one, else recent channel messages —
+    the same reader the agent uses for context, so a captured memory always
+    corresponds to a conversation Cairn could also have read.
+    """
+    channel = event.get("channel")
+    thread_ts = event.get("thread_ts")
+    if thread_ts:
+        turns = conversation.read_thread(
+            client, channel, thread_ts, bot_user_id=cfg.bot_user_id,
+            limit=conversation._int_env("CAIRN_CAPTURE_LIMIT", 20))
+    else:
+        turns = conversation.read_channel(
+            client, channel, bot_user_id=cfg.bot_user_id,
+            limit=conversation._int_env("CAIRN_CAPTURE_LIMIT", 20))
+    if not turns:
+        return
+    # The triggering message's author is the right attribution here: this runs
+    # on the message that tripped the gate, and bot messages never reach it.
+    memory_capture.capture_conversation(
+        turns, author=event.get("user"), channel=channel,
+        team=event.get("team"), source=cfg.name, thread_ts=thread_ts)
+
+
 def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachments=None,
             app_name=None, bot_user_id: str = "") -> None:
     """Shared path for mention + DM: react, run the agent under telemetry, reply."""
@@ -628,10 +654,24 @@ def _build_app(cfg: AppConfig) -> App:
         )
         if channel_type != "im":
             _detect_action_item(text, raw, channel, event.get("ts"), event.get("team"), cfg.name, client=client)
-            # Passively capture decisions/commitments Loop only observes (off unless
-            # CAIRN_MEMORY_CAPTURE=on) so recall works without an explicit @Loop turn.
-            memory_capture.capture(text, author=user, channel=channel, team=event.get("team"), source=cfg.name)
-            return  # observe-only (channel chatter) — not a DM to Loop
+            # Passively capture decisions Cairn only observes (off unless
+            # CAIRN_MEMORY_CAPTURE=on), so recall works without an @Cairn turn.
+            #
+            # The gate runs on the triggering message (cheap, no model call), but
+            # what gets distilled is the surrounding CONVERSATION — the decision
+            # is the last line of a discussion, and the reasoning that produced it
+            # is in the lines before. Off the socket thread: this makes a model
+            # call and one or two Slack reads.
+            # `event.get("bot_id")` guards the feedback loop: Cairn's own replies
+            # are full of decision language ("We decided to use Postgres
+            # because…") since it reports decisions back, and capturing those
+            # would feed its output into its own memory, to be cited later as
+            # evidence. Bolt delivers bot messages here too, so this matters.
+            if (not event.get("bot_id")
+                    and memory_capture.enabled()
+                    and memory_capture.looks_memorable(text)):
+                _dispatch(_capture_conversation, client, event, cfg)
+            return  # observe-only (channel chatter) — not a DM to Cairn
         if "<@" in raw:
             return  # a mention inside a DM: let the app_mention handler take it
         attachments = _collect_files(event, client)

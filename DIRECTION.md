@@ -189,10 +189,54 @@ _Two bugs surfaced while doing this, both worth more than the features:_
   model calls and 30k input tokens instead of 1 and 10k. Fixed to fetch from the
   thread parent; pinned by a regression test.
 
-**Phase 1 — capture what is actually there** _(the real unlock; gaps 1, 2, 4)_
-- Thread-level capture: distill a whole thread, keeping the **why**
-- Backfill existing channel history
-- A far better memorability gate than a keyword regex
+**Phase 1 — capture what is actually there** — ✅ **done 2026-08-26** _(verified live)_
+- [x] **Shared conversation reader** (`loop/conversation.py`) — context, capture
+      and backfill all read Slack through one path, so a captured memory always
+      corresponds to a conversation Cairn could also have read. Added the
+      **channel-context fallback**: a mention that is not in a thread now gets
+      recent channel messages (people @-mention in the channel and follow up in
+      the channel; that path previously got nothing and the model spent 3 calls /
+      30k tokens reconstructing context itself — now 1 call / 10k).
+- [x] **Thread-level capture** — the whole conversation is distilled, not the
+      line that tripped the gate, and the prompt asks explicitly for the **why**
+      and what was rejected. A cooldown stops an active thread being re-distilled
+      on every message. Verified live: four channel messages with no `@Cairn`
+      produced *"…decided to merge the error rate dashboards and drop the
+      per-service split, prioritizing fewer dashboards over perfect
+      granularity"*, with provenance, cited back on a later question.
+- [x] **A far better gate** — the first cut matched four verbs after "let's" and
+      missed *"ok let's merge them into one and drop the per-service split"*; a
+      live test produced **zero** captures from four decision messages. Now:
+      stated decisions, `let's <anything>`, decision verbs on a thing, policy
+      calls, and short assent (`agreed`, `+1`, `sgtm`) — with a **hedge guard**,
+      since "we could split it per-service" trips the verbs while settling
+      nothing. Permissive by design: a missed decision is lost silently and for
+      good, a false positive costs one model call the extractor then rejects.
+- [x] **Backfill** (`cairn-backfill`) — walks a channel's history, groups it into
+      conversations (threads, and runs of messages separated by silence), and
+      distils the candidates. `--dry-run` uses the free gate only; `--limit` caps
+      *model calls*, since free tiers are tens of requests per day; processed
+      conversations are recorded so a re-run continues instead of re-paying.
+
+_Two bugs surfaced, one of them the worst this product could have:_
+- **Cairn was learning from itself.** Its replies are full of decision language
+  ("We decided to use Postgres because…", "Saved to memory: …", "Per @alice, the
+  team agreed to…") because it reports decisions back. A live dry-run showed 14
+  candidates, **7 of which were Cairn's own essays**. Feeding those into memory
+  produces a citation whose source is the citation — fatal for a provenance
+  product. Bot turns are now excluded from the gate on both paths, and backfill
+  attributes a memory to the human who stated the decision rather than the last
+  turn (which is usually Cairn's reply).
+- **`extract_json` was hardcoded to Anthropic's HTTP wire format** while its
+  docstring claimed it followed the configured provider. It worked by accident
+  while MiniMax was Anthropic-compatible and 401'd the moment we moved to Gemini,
+  so every passive capture failed silently. It now goes through the provider
+  factory like everything else (`CAIRN_EXTRACT_MODEL` can route these small
+  mechanical calls to a cheaper model).
+
+_Still open from Phase 1:_ near-duplicate memories. Backfilling a decision that
+was also saved live produces a re-phrased near-copy; exact-content dedup does not
+catch it. Belongs with the supersession work in Phase 3.
 
 **Phase 2 — answer questions properly** _(gaps 5, 6)_
 - A cited question-answering surface, not just memories injected into chat

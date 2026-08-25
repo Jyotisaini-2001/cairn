@@ -13,8 +13,6 @@ import logging
 import os
 import re
 
-import httpx
-
 log = logging.getLogger("loop.llm")
 
 # Loop's own bot user ids, skipped when picking a human @mention out of a message.
@@ -33,31 +31,79 @@ def register_bot_id(user_id: str | None) -> None:
         BOT_IDS.add(user_id)
 
 
-def extract_json(prompt: str, *, max_tokens: int = 256) -> dict | None:
-    """Send ``prompt`` to the configured model and parse a single JSON object from
-    the reply (tolerant of ```code fences```). Returns the dict, or None on any
-    error — callers treat None as "nothing usable"."""
-    api_key = os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY", "")
-    base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
-    last_err: Exception | None = None
-    for attempt in range(2):  # one retry — MiniMax handshakes occasionally time out
+_JSON_SYSTEM = (
+    "You return data, not prose. Reply with a single valid JSON object and "
+    "nothing else — no explanation, no markdown fences."
+)
+
+_json_agent = None
+
+
+def _agent():
+    """A tool-less Strands agent used purely for JSON extraction.
+
+    Built through the same provider factory as the main agent, so these calls
+    follow CAIRN_MODEL_PROVIDER like everything else. The previous version spoke
+    Anthropic's HTTP wire format directly; that silently only worked while the
+    provider happened to be Anthropic-compatible, and every capture broke with a
+    401 the moment the project moved to Gemini.
+
+    CAIRN_EXTRACT_MODEL routes these to a cheaper/faster model than the one
+    answering in Slack — they are small, mechanical calls.
+    """
+    global _json_agent
+    if _json_agent is None:
+        from strands import Agent  # noqa: PLC0415
+
+        from loop.agent import _build_model  # noqa: PLC0415 (avoids an import cycle)
+
+        _json_agent = Agent(
+            model=_build_model(os.environ.get("CAIRN_EXTRACT_MODEL") or None),
+            system_prompt=_JSON_SYSTEM,
+            tools=[],
+            callback_handler=None,   # these are data calls; nothing to stream to stdout
+        )
+    return _json_agent
+
+
+def _parse_json(text: str) -> dict | None:
+    """Parse one JSON object out of a model reply, tolerating fences and prose."""
+    text = re.sub(r"^```[a-z]*\n?|\n?```$", "", text.strip()).strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Some models wrap the object in a sentence; take the outermost braces.
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            return None
         try:
-            resp = httpx.post(
-                f"{base_url.rstrip('/')}/v1/messages",
-                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]},
-                timeout=20,
-            )
-            resp.raise_for_status()
-            content = resp.json()["content"][0]["text"].strip()
-            content = re.sub(r"^```[a-z]*\n?|\n?```$", "", content).strip()
-            data = json.loads(content)
-            return data if isinstance(data, dict) else None
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def extract_json(prompt: str, *, max_tokens: int = 256) -> dict | None:
+    """Ask the configured model for a JSON object and parse it.
+
+    Returns the dict, or None on any error — callers treat None as "nothing
+    usable", so a failure here must never propagate into the message path.
+    ``max_tokens`` is advisory: the cap comes from the provider factory.
+    """
+    last_err: Exception | None = None
+    for attempt in range(2):        # one retry — handshakes occasionally time out
+        try:
+            agent = _agent()
+            agent.messages = []     # these calls are one-shot, never a conversation
+            data = _parse_json(str(agent(prompt)))
+            if data is not None:
+                return data
+            log.warning("extract_json attempt %d: reply was not a JSON object", attempt + 1)
         except Exception as e:  # noqa: BLE001
             last_err = e
             log.warning("extract_json attempt %d failed: %s", attempt + 1, e)
-    log.warning("extract_json giving up after retries: %s", last_err)
+    if last_err:
+        log.warning("extract_json giving up after retries: %s", last_err)
     return None
 
 

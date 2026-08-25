@@ -99,3 +99,43 @@ def _main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_main())
+
+
+# ------------------------------------------------- provider-agnostic extraction
+def test_extract_json_tolerates_fences_and_prose():
+    """Models wrap JSON in different ways; the parser must survive all of them."""
+    from loop.llm import _parse_json
+
+    assert _parse_json('{"a": 1}') == {"a": 1}
+    assert _parse_json('```json\n{"a": 1}\n```') == {"a": 1}
+    assert _parse_json('Sure! Here you go: {"a": 1} — hope that helps') == {"a": 1}
+    assert _parse_json("not json at all") is None
+    assert _parse_json('[1, 2, 3]') is None          # must be an object
+
+
+def test_extraction_uses_the_provider_factory(monkeypatch):
+    """Regression: extract_json spoke Anthropic's HTTP wire format directly, so
+    every passive capture failed with a 401 the moment the project moved to
+    Gemini — while its own docstring claimed it followed the configured provider.
+    """
+    from loop import llm
+
+    built = {}
+    monkeypatch.setattr(llm, "_json_agent", None)
+
+    class FakeAgent:
+        messages: list = []
+
+        def __init__(self, **kw):
+            built.update(kw)
+
+        def __call__(self, _prompt):
+            return '{"ok": true}'
+
+    import strands
+    monkeypatch.setattr(strands, "Agent", FakeAgent)
+    monkeypatch.setattr("loop.agent._build_model", lambda mid=None: f"model:{mid}")
+
+    assert llm.extract_json("anything") == {"ok": True}
+    assert built["model"] == "model:None"      # came from the factory, not httpx
+    assert built["tools"] == []

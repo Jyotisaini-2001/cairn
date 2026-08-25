@@ -135,6 +135,41 @@ prompt edit could silently regress quality and we'd never know.
 ---
 
 ## Status log
+- **2026-08-26 (feat/cairn, later)** — **Phase 1 done: Cairn now learns from
+  conversations nobody addressed to it, including ones that predate it.** See
+  `DIRECTION.md` for the full write-up.
+  **(A) One reader** (`loop/conversation.py`) for context, capture and backfill,
+  so a captured memory always corresponds to a conversation Cairn could also have
+  read. Brought the **channel-context fallback** with it — a mention outside a
+  thread now gets recent channel messages (1 model call / 10k tokens, versus 3 /
+  30k when the model had to reconstruct context via the Slack API itself).
+  **(B) Thread-level capture** — the whole conversation is distilled, and the
+  prompt asks for the *why* and what was rejected, not just the conclusion.
+  Verified live: four channel messages, no `@Cairn`, produced a memory carrying
+  the reasoning ("prioritizing fewer dashboards over perfect granularity"), cited
+  back correctly on a later question.
+  **(C) The gate was the bottleneck.** A live test produced **zero** captures
+  from four obvious decision messages: the regex matched four verbs after "let's"
+  and missed "ok let's merge them into one and drop the per-service split".
+  Rewritten to be permissive (a missed decision is lost silently and for good; a
+  false positive costs one model call the extractor rejects) with a hedge guard
+  so "we could split it per-service" does not count.
+  **(D) `cairn-backfill`** walks channel history, groups it into conversations,
+  and distils candidates. `--dry-run` is free (gate only), `--limit` caps model
+  calls, and processed conversations are recorded so re-runs continue rather than
+  re-pay.
+  **Two bugs, one serious.** (1) **Cairn was about to learn from itself** — its
+  replies are full of decision language because it reports decisions back, and a
+  dry-run showed 7 of 14 candidates were its own essays. That would produce
+  citations whose source is the citation. Bot turns are now excluded on both
+  paths, and backfill attributes to the human, not the last turn. (2)
+  **`extract_json` was hardcoded to Anthropic's wire format** while claiming to
+  follow the configured provider — it 401'd on Gemini, so every passive capture
+  failed silently. Now routed through the provider factory.
+  **Tests 181** (+52 today). **Open:** near-duplicate memories (backfill
+  re-phrases something already saved live; exact dedup misses it) — belongs with
+  Phase 3 supersession. Also still open: the `loop/` package rename, and
+  `loop-eval` has not been re-run since the Gemini swap.
 - **2026-08-26 (feat/cairn)** — **Direction set, renamed to Cairn, Phase 0
   foundations done and verified live.** See `DIRECTION.md` (now read-first in
   `CLAUDE.md`) for the decision and roadmap. The project was three ~60% products

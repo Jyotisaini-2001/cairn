@@ -23,6 +23,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 from typing import Any
 
 from loop.action_items import looks_like_action_item
@@ -32,12 +33,45 @@ log = logging.getLogger("loop.memcapture")
 
 # Decision / agreement phrasing. Commitments ("X will fix Y") are covered by
 # reusing action_items.looks_like_action_item, so this only adds the decision side.
+# Cheap prefilter before the model call. It only needs to be *permissive* — the
+# extraction step returns is_memorable=false on anything that is not a real
+# decision, and the cooldown stops an active thread being re-distilled. Being too
+# narrow is the expensive failure: a missed decision is lost silently and for
+# good, while a false positive costs one model call.
+#
+# The first cut matched `let's (go with|use|stick with|do)` — four verbs — and so
+# missed "ok let's merge them into one and drop the per-service split", which is
+# about as clear a decision as Slack produces.
 _DECISION_RE = re.compile(
     r"\b("
+    # explicit statements of a decision
     r"we(?:'?ll| will| are going to| decided| agreed| chose| picked| settled)|"
-    r"let'?s (?:go with|use|stick with|do)|going with|decision:|"
-    r"the plan is|final call|we'?re using|agreed to|settled on|"
-    r"moving forward with|from now on|going forward|for now we"
+    r"we(?:'?re| are) (?:going with|using|switching|moving|dropping|keeping|adopting|"
+    r"replacing|deprecating|standardi[sz]ing)|"
+    r"going with|decision:|the plan is|final call|agreed to|settled on|"
+    r"moving forward with|from now on|going forward|for now we|"
+    # "let's <anything>" — an imperative the room is agreeing to
+    r"let'?s \w+|"
+    # decision verbs applied to a thing
+    r"(?:switch|move|drop|merge|split|consolidate|migrate|adopt|replace|"
+    r"deprecate|revert|roll back|standardi[sz]e) (?:it|them|this|that|to|from|"
+    r"onto|into|off|back|over)|"
+    # scope / policy calls
+    r"(?:cap|limit|freeze|block|require|enforce|mandate) (?:it|them|this|the|a|"
+    r"all|any)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Short assent. Weak on its own, but capture reads the WHOLE conversation, so
+# "agreed" after a proposal is exactly the moment a decision becomes one. Bare
+# "ok"/"yes" are deliberately excluded: too common in chit-chat to be worth a
+# model call.
+_AGREEMENT_RE = re.compile(
+    r"^\s*(?:"
+    r"\+1|lgtm|sgtm|agreed|approved|deal|ship it|do it|"
+    r"sounds good|works for me|fine by me|makes sense|let'?s do it|"
+    r"ok(?:ay)?[, ]+(?:let'?s|we|agreed|do|go)"
     r")\b",
     re.IGNORECASE,
 )
@@ -49,9 +83,34 @@ def enabled() -> bool:
     return os.environ.get("CAIRN_MEMORY_CAPTURE", "off").strip().lower() in {"on", "1", "true", "yes"}
 
 
+# Hedged talk is a proposal, not a decision: "we could split it per-service",
+# "maybe we should merge them", "what if we drop the split". These trip the
+# decision-verb patterns while the room has settled nothing, and Slack is full of
+# them. An explicit decision phrase still wins — "we could have, but we decided
+# to X" is a decision.
+_HEDGE_RE = re.compile(
+    r"\b(?:could|might|maybe|perhaps|what if|how about|should we|thinking about|"
+    r"wondering|possibly|considering|any thoughts|open to)\b", re.IGNORECASE)
+
+# Phrases that state a settled outcome, and so override a hedge in the same line.
+_DECIDED_RE = re.compile(
+    r"\b(?:we (?:decided|agreed|chose|picked|settled)|decision:|final call|"
+    r"settled on|agreed to|going with|from now on)\b", re.IGNORECASE)
+
+
 def looks_memorable(text: str) -> bool:
-    """Cheap gate: does this look like a durable decision or a commitment?"""
-    return bool(_DECISION_RE.search(text)) or looks_like_action_item(text)
+    """Cheap gate: could this message be the moment a decision was made?
+
+    Deliberately permissive — see the note on _DECISION_RE. Three ways in: a
+    stated decision, a short assent to one, or a commitment ("X will do Y").
+    """
+    if not text or not text.strip():
+        return False
+    if _HEDGE_RE.search(text) and not _DECIDED_RE.search(text):
+        return False
+    return bool(_DECISION_RE.search(text)
+                or _AGREEMENT_RE.search(text)
+                or looks_like_action_item(text))
 
 
 def _store() -> Any:
@@ -126,4 +185,115 @@ def capture(
         return memory
     except Exception:  # noqa: BLE001
         log.exception("passive memory capture failed silently")
+        return None
+
+
+# ── Thread-level capture ─────────────────────────────────────────────────────
+# A decision is not a sentence, it is a conversation. Capturing only the line
+# that matched the gate keeps the conclusion and throws away the reasoning:
+#
+#     [12] "Mongo's transactions are flaky for billing"
+#     [19] "Postgres means a migration though"
+#     [31] "correctness wins, we can eat the migration"
+#     [34] "ok let's go with Postgres"        <- only this used to be saved
+#
+# Six months later "why?" is the question people actually ask, so we distil the
+# whole thread: what was decided, why, and what was rejected.
+_THREAD_COOLDOWN_S = 15 * 60
+_recent_captures: dict[str, float] = {}
+
+
+def _cooling_down(key: str) -> bool:
+    """One capture per conversation per cooldown window.
+
+    An active thread trips the gate on several messages; without this each one
+    would re-distil the same discussion. In-process only — a restart forgets,
+    and the store's exact-content dedup catches the common repeat.
+    """
+    now = time.time()
+    for k, ts in list(_recent_captures.items()):      # opportunistic cleanup
+        if now - ts > _THREAD_COOLDOWN_S:
+            _recent_captures.pop(k, None)
+    if now - _recent_captures.get(key, 0.0) < _THREAD_COOLDOWN_S:
+        return True
+    _recent_captures[key] = now
+    return False
+
+
+def _render(turns: list[dict]) -> str:
+    return "\n".join(f"{t.get('speaker', '?')}: {t.get('text', '')}" for t in turns)
+
+
+def _extract_from_conversation(turns: list[dict]) -> str | None:
+    """Focused model call over a whole conversation.
+
+    Asks for the reasoning explicitly — a memory that records *what* without
+    *why* cannot answer the question people actually come back with.
+    """
+    prompt = (
+        "Below is a Slack conversation. Decide whether the team reached a durable "
+        "DECISION, agreement, or concrete COMMITMENT in it.\n\n"
+        "Return ONLY valid JSON:\n"
+        '{"is_memorable": true/false, '
+        '"memory": "two to four sentences: WHAT was decided, WHY (the reasoning '
+        'and any trade-off accepted), and WHAT WAS REJECTED if an alternative was '
+        'discussed. Self-contained — it must still make sense to someone reading '
+        'it in six months with no other context. Do not add who/where/when; that '
+        'is attached automatically."}\n\n'
+        "Set is_memorable=false if the conversation is questions, opinions, "
+        "brainstorming with no conclusion, chit-chat, or still unresolved. "
+        "Prefer false when in doubt: a noisy memory hurts recall.\n\n"
+        f"Conversation:\n{_render(turns)}"
+    )
+    data = extract_json(prompt, max_tokens=500)
+    if not data or not data.get("is_memorable"):
+        return None
+    return (data.get("memory") or "").strip() or None
+
+
+def capture_conversation(
+    turns: list[dict],
+    *,
+    author: str | None = None,
+    channel: str | None = None,
+    team: str | None = None,
+    source: str | None = None,
+    thread_ts: str | None = None,
+    bypass_cooldown: bool = False,
+    require_enabled: bool = True,
+) -> str | None:
+    """Distil a conversation into one memory. Returns it, or None.
+
+    Never raises: capture runs alongside the message path and must never affect
+    a reply. `thread_ts` is both stamped as provenance (so a memory can be traced
+    back to the discussion it came from) and used as the cooldown key.
+
+    Backfill passes ``bypass_cooldown`` (each historical conversation is distinct,
+    and it does its own dedup) and ``require_enabled=False`` (it is an explicit,
+    operator-invoked action, not passive listening).
+    """
+    if (require_enabled and not enabled()) or not turns:
+        return None
+    key = thread_ts or f"{channel}:{turns[-1].get('ts', '')}"
+    if not bypass_cooldown and _cooling_down(key):
+        log.debug("capture skipped, cooling down: %s", key)
+        return None
+    try:
+        memory = _extract_from_conversation(turns)
+        if not memory:
+            return None
+        metadata = {
+            "kind": "decision",
+            **({"author": author} if author else {}),
+            **({"channel": channel} if channel else {}),
+            **({"team": team} if team else {}),
+            **({"source": source} if source else {}),
+            **({"thread_ts": thread_ts} if thread_ts else {}),
+        }
+        _save(memory, metadata)
+        log.info("[%s] thread memory captured channel=%s turns=%d: %r",
+                 source, channel, len(turns), memory[:100])
+        return memory
+    except Exception:  # noqa: BLE001
+        log.exception("thread memory capture failed silently")
         return None
