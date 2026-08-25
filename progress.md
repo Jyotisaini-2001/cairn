@@ -135,6 +135,49 @@ prompt edit could silently regress quality and we'd never know.
 ---
 
 ## Status log
+- **2026-08-26 (feat/cairn)** — **Direction set, renamed to Cairn, Phase 0
+  foundations done and verified live.** See `DIRECTION.md` (now read-first in
+  `CLAUDE.md`) for the decision and roadmap. The project was three ~60% products
+  (knowledge / automation / proactivity, per `gaps.txt`); it now commits to
+  **organizational memory** — "decisions are made in Slack and lost in Slack" —
+  with Jira and ambient demoted to supporting cast.
+  **(A) Cairn.** New Slack app created from `docs/slack-app-manifest.yml`
+  (requests `channels:history` + `message.channels`, which is what will let it
+  read conversations it was not mentioned in). Agent identity now states the
+  direction: cite who/where/when, an answer without a source is a rumour. 247
+  `LOOP_*` env vars → `CAIRN_*`. The `loop/` package keeps its name for now.
+  **(B) Provider swap, forced.** MiniMax credits ran out mid-session ("Token Plan
+  usage limit reached"), so we moved to Gemini's free tier — and found the
+  `gemini` branch of the provider factory had **never been exercised**: it passed
+  `max_tokens`, which Gemini's `GenerateContentConfig` rejects
+  (`max_output_tokens`). Also `gemini-2.5-flash` is retired; Google's own 404
+  named `gemini-3.6-flash`. Both fixed. This is the first real proof the provider
+  factory earns its keep.
+  **(C) Latency: ~27s → ~4s.** The cost was input tokens, and the bulk was **tool
+  schemas** (6.1k tokens), re-sent on every request. Dropped `think` (2.1k,
+  unused — Gemini reasons natively) and compressed the Jira prompt block. MCP was
+  also rebuilding the whole agent per request (`_mcp_clients` path), so it is off
+  by default now.
+  **(D) `CAIRN_TOOLS`.** Rather than delete capabilities, tool groups
+  (slack/jira/calculator/think) became env switches — an unused tool is permanent
+  latency and cost, but the decision to drop one should be reversible. Measured:
+  none=468, slack=1.7k, default=4.0k, +think=6.1k tokens/request.
+  **(E) Phase 0 shipped** — thread context, async dispatch, retries with backoff,
+  SQLite-backed staged tickets. Details + the two bugs they surfaced are in
+  `DIRECTION.md`; briefly: (1) the **cached agent was accumulating every
+  conversation across all channels** (masked by MCP's per-request rebuild), and
+  (2) **thread context fetched with the reply's own ts instead of the thread
+  parent**, silently returning 0 turns while the model compensated via the Slack
+  API at 3× the model calls and 3× the tokens. Both fixed and pinned by tests.
+  **Tests 96** (was 46): +7 tool switches, +13 thread context, +7 resilience,
+  +8 pending store. **Verified live on `gemini-3.6-flash`:** decision saved and
+  recalled from differently-worded phrasing with provenance; threaded follow-up
+  ("expand on the second one") answered from thread context at 1 model call /
+  10k tokens, versus 3 / 30k before the fix.
+  **Open:** thread context only fires inside a thread — a mention in the channel
+  (how people actually talk) still gets nothing, so a **recent-channel-history
+  fallback** is the next obvious win. Also: the `slack` tool is tool-happy; the
+  `loop/` package rename; `loop-eval` has not been re-run since the Gemini swap.
 - **2026-07-10 (session/marketplace-prep)** — **Marketplace-prep hardening; two
   root causes killed; everything re-verified live** (see `SESSION_PROGRESS.md`
   for the full session record). **(1) DBs untracked from git** — `data/loop.db`

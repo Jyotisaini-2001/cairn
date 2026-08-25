@@ -4,7 +4,8 @@ _Decided 2026-08-24. This document sets the single direction for the project and
 is the tie-breaker when a future change could pull it sideways. Read it with
 `architecture.md` (how it's wired) and `progress.md` (where it stands)._
 
-**Status of the name:** proposed `Cairn`, not yet adopted. Package is still `loop`.
+**Status of the name:** adopted. Slack app, agent identity and env vars are
+`Cairn`; the `loop/` Python package still carries the old name (internal only).
 
 ---
 
@@ -155,11 +156,38 @@ citation. Most RAG systems bolt citations on afterwards and get them wrong.
 
 ## 5. Roadmap
 
-**Phase 0 — foundations** _(everything after depends on these)_
-- Thread context passed to the agent (`conversations_replies`, last N turns)
-- Non-blocking Slack handling (ack fast, process async)
-- Timeouts + retries with backoff on provider errors
-- Persist staged Jira tickets (`_pending` is in-process; lost on restart)
+**Phase 0 — foundations** — ✅ **done 2026-08-26** _(verified live)_
+- [x] **Thread context** (`CAIRN_THREAD_CONTEXT`) — the parent thread's recent
+      turns are passed to the agent, so follow-ups resolve. Bounded by turn count
+      + a 4k char cap; a missing scope degrades to no context, never a failed
+      reply.
+- [x] **Non-blocking Slack handling** (`CAIRN_ASYNC`) — events are acked
+      immediately and the turn runs on a worker pool. Inline, an agent turn
+      overran Socket Mode's ~3s deadline and Slack re-delivered the event, so the
+      user got the same answer twice.
+- [x] **Retries with backoff** (`CAIRN_MODEL_RETRIES`) — transient provider
+      failures (429 / 5xx / timeouts) are retried, then reported in words
+      ("the model is busy — try me again in a moment"). Previously a MiniMax 429
+      storm reached the user as silence.
+- [x] **Staged Jira tickets persist** — `_pending` is SQLite-backed with a 7-day
+      TTL. A ticket waits on a human typing "yes"; any restart in between used to
+      drop it silently, so the "yes" did nothing.
+
+_Two bugs surfaced while doing this, both worth more than the features:_
+- **Shared conversation state.** The cached Strands `Agent` accumulates
+  `messages` across calls, and there is one per app — so every user's turns from
+  every channel fed into every later request (cross-channel leakage, and a prompt
+  that grows until it blows the context window). It was masked by MCP mode
+  rebuilding the agent each request; turning MCP off for speed exposed it. Each
+  turn now starts clean; continuity comes from thread context (correctly scoped)
+  and long-term memory.
+- **Thread context fetched with the wrong ts.** The fetch used the message's own
+  ts — right for *replying* (it roots Cairn's answer under the mention), wrong
+  for *reading*: `conversations_replies` on a reply's ts returns only that
+  message. It never errored — it returned 0 turns and the model compensated by
+  calling the Slack API to read the channel, producing correct answers at 3
+  model calls and 30k input tokens instead of 1 and 10k. Fixed to fetch from the
+  thread parent; pinned by a regression test.
 
 **Phase 1 — capture what is actually there** _(the real unlock; gaps 1, 2, 4)_
 - Thread-level capture: distill a whole thread, keeping the **why**
@@ -210,9 +238,12 @@ Jira is reframed throughout: **file a ticket that cites the decision it came fro
 
 ## 8. Open decisions
 
-- [ ] Adopt the name `Cairn`? (rename `loop/` package, `pyproject.toml`, script
-      entry, and the agent's self-description in `SYSTEM_PROMPT`)
-- [ ] Start with Phase 0 (foundations) or Phase 1 (content, so there is something
-      to demo)?
+- [x] Adopt the name `Cairn`? — **yes.** Slack app, `SYSTEM_PROMPT` identity and
+      all 247 `LOOP_*` env vars are renamed. Still outstanding: the `loop/`
+      package dir, `pyproject.toml`, the console script, `loop.*` logger
+      prefixes, and the prose in README/architecture — one deliberate pass.
+- [x] Start with Phase 0 or Phase 1? — **Phase 0 first** (done 2026-08-26); its
+      reliability gaps would otherwise have been rediscovered the hard way, and
+      thread context is a prerequisite for Phase 1's thread-level capture.
 - [ ] Should scope default change from `channel` to something wider for
       onboarding-style questions?

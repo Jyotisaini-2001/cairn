@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import time
 from typing import Any
 
@@ -20,9 +21,93 @@ from loop import context as reqctx
 
 log = logging.getLogger("loop.jira")
 
-# Pending tickets keyed by thread_ts. Populated by jira_stage_ticket,
-# consumed by slack_app when the user confirms with "yes".
-_pending: dict[str, dict] = {}
+# Pending tickets keyed by thread_ts. Populated by jira_stage_ticket, consumed by
+# slack_app when the user confirms with "yes".
+#
+# Backed by SQLite rather than a process dict: a staged ticket waits on a human
+# typing "yes", which can be minutes or hours, and a restart in between used to
+# silently drop it (the user's "yes" then did nothing). Same mapping interface,
+# so both call sites are unchanged.
+_PENDING_TTL_S = 7 * 24 * 3600      # a "yes" this old is not a confirmation
+
+
+class _PendingStore:
+    """Thread-keyed staged tickets that survive a restart.
+
+    Deliberately tiny and forgiving: any storage failure degrades to in-memory
+    behaviour rather than breaking ticket staging.
+    """
+
+    def __init__(self) -> None:
+        self._conn: sqlite3.Connection | None = None
+
+    def _db(self) -> sqlite3.Connection | None:
+        if self._conn is not None:
+            return self._conn
+        try:
+            path = os.environ.get("DATABASE_PATH", "./data/loop.db")
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            conn = sqlite3.connect(path, check_same_thread=False)
+            conn.execute("""CREATE TABLE IF NOT EXISTS pending_tickets (
+                thread_ts TEXT PRIMARY KEY,
+                payload   TEXT NOT NULL,
+                created_at REAL NOT NULL)""")
+            conn.commit()
+            self._conn = conn
+            return conn
+        except Exception as err:  # noqa: BLE001
+            log.warning("loop.jira: pending store unavailable (%s); staying in-memory", err)
+            return None
+
+    def _expire(self, conn: sqlite3.Connection) -> None:
+        conn.execute("DELETE FROM pending_tickets WHERE created_at < ?",
+                     (time.time() - _PENDING_TTL_S,))
+
+    def __setitem__(self, thread_ts: str, ticket: dict) -> None:
+        conn = self._db()
+        if conn is None:
+            return
+        try:
+            self._expire(conn)
+            conn.execute(
+                "INSERT OR REPLACE INTO pending_tickets VALUES (?,?,?)",
+                (thread_ts, json.dumps(ticket), time.time()))
+            conn.commit()
+        except Exception:  # noqa: BLE001
+            log.exception("loop.jira: failed to persist staged ticket")
+
+    def __contains__(self, thread_ts: object) -> bool:
+        return self.get(str(thread_ts)) is not None
+
+    def get(self, thread_ts: str) -> dict | None:
+        conn = self._db()
+        if conn is None:
+            return None
+        try:
+            self._expire(conn)
+            row = conn.execute(
+                "SELECT payload FROM pending_tickets WHERE thread_ts=?",
+                (thread_ts,)).fetchone()
+            return json.loads(row[0]) if row else None
+        except Exception:  # noqa: BLE001
+            log.exception("loop.jira: failed to read staged ticket")
+            return None
+
+    def pop(self, thread_ts: str, default: Any = None) -> Any:
+        ticket = self.get(thread_ts)
+        if ticket is None:
+            return default
+        conn = self._db()
+        if conn is not None:
+            try:
+                conn.execute("DELETE FROM pending_tickets WHERE thread_ts=?", (thread_ts,))
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                log.exception("loop.jira: failed to clear staged ticket")
+        return ticket
+
+
+_pending = _PendingStore()
 
 
 def default_project_key() -> str:

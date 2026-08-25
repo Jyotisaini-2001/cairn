@@ -28,12 +28,14 @@ import os
 import re
 import threading
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from loop import observability as obs
+from loop.agent import TransientModelError
 from loop.agent import run as run_agent, remember as remember_memory
 from loop.jira_tool import (
     has_pending, pop_pending, _create_jira_issue_direct, _pending,
@@ -288,10 +290,134 @@ def _detect_action_item(
         log.exception("action item detection failed silently")
 
 
-def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachments=None, app_name=None) -> None:
+# ── Off-thread dispatch ──────────────────────────────────────────────────────
+# Socket Mode wants the event acknowledged within ~3s, but an agent turn takes
+# seconds (and can retry a rate-limited provider on top). Running it inline held
+# the socket open past the deadline, so Slack re-delivered the event and the user
+# got the same answer twice. We hand the work to a small pool and return
+# immediately; the reply still lands in-thread when it is ready.
+#
+#   CAIRN_ASYNC=off        run inline again (useful when debugging)
+#   CAIRN_ASYNC_WORKERS=4  concurrent turns
+_executor: ThreadPoolExecutor | None = None
+_executor_lock = threading.Lock()
+
+
+def _async_enabled() -> bool:
+    return os.environ.get("CAIRN_ASYNC", "on").strip().lower() not in {
+        "off", "0", "false", "no"}
+
+
+def _pool() -> ThreadPoolExecutor:
+    global _executor
+    with _executor_lock:
+        if _executor is None:
+            try:
+                workers = max(1, int(os.environ.get("CAIRN_ASYNC_WORKERS", "4")))
+            except ValueError:
+                workers = 4
+            _executor = ThreadPoolExecutor(max_workers=workers,
+                                           thread_name_prefix="cairn-turn")
+            log.info("async dispatch on (%d workers)", workers)
+        return _executor
+
+
+def _dispatch(fn, *args, **kwargs) -> None:
+    """Run `fn` off the socket thread so Slack gets its ack immediately.
+
+    Exceptions inside the worker are logged rather than lost — a future nobody
+    inspects swallows them silently otherwise. `fn` (`_answer`) already reports
+    failures to the user itself.
+    """
+    if not _async_enabled():
+        fn(*args, **kwargs)
+        return
+
+    def _run() -> None:
+        try:
+            fn(*args, **kwargs)
+        except Exception:  # noqa: BLE001
+            log.exception("background turn failed")
+
+    _pool().submit(_run)
+
+
+# ── Thread context ───────────────────────────────────────────────────────────
+# Without this every turn is answered blind: "what about the second one?" has no
+# referent, because long-term memory is the only state the agent carries. We pass
+# the recent turns of the *current thread* so a conversation can actually be a
+# conversation. Bounded by CAIRN_THREAD_CONTEXT_LIMIT (turns) and a char cap, and
+# switchable off with CAIRN_THREAD_CONTEXT=off — it is tokens on every request.
+_THREAD_CTX_CHAR_CAP = 4000
+
+
+def _thread_context_enabled() -> bool:
+    return os.environ.get("CAIRN_THREAD_CONTEXT", "on").strip().lower() not in {
+        "off", "0", "false", "no"}
+
+
+def _thread_limit() -> int:
+    try:
+        return max(0, int(os.environ.get("CAIRN_THREAD_CONTEXT_LIMIT", "10")))
+    except ValueError:
+        return 10
+
+
+def _thread_history(client, channel: str, thread_ts: str, current_ts: str,
+                    bot_user_id: str) -> list[dict]:
+    """Recent turns of this thread, oldest first, excluding the current message.
+
+    Returns ``[{"speaker": "you"|"user"|"<@Uxxx>", "text": ...}]``. Never raises:
+    a missing scope or an API hiccup degrades to no context, not a failed reply.
+    """
+    limit = _thread_limit()
+    if not (_thread_context_enabled() and limit and thread_ts):
+        return []
+    try:
+        resp = client.conversations_replies(
+            channel=channel, ts=thread_ts, limit=limit + 1,
+        )
+    except Exception as err:  # noqa: BLE001
+        log.info("thread context unavailable (channel=%s): %s", channel, err)
+        return []
+
+    turns: list[dict] = []
+    for m in resp.get("messages", []) or []:
+        if m.get("ts") == current_ts:      # the message we are answering
+            continue
+        text = _strip_mentions(m.get("text", "") or "").strip()
+        if not text:
+            continue
+        speaker = "you" if m.get("bot_id") or m.get("user") == bot_user_id \
+            else f"<@{m.get('user')}>"
+        turns.append({"speaker": speaker, "text": text})
+
+    turns = turns[-limit:]
+    # Trim oldest-first until under the char cap, so a giant thread cannot blow
+    # up the prompt.
+    while turns and sum(len(t["text"]) for t in turns) > _THREAD_CTX_CHAR_CAP:
+        turns.pop(0)
+    log.info("thread context: %d turn(s) (thread_ts=%s current_ts=%s)",
+             len(turns), thread_ts, current_ts)
+    return turns
+
+
+def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachments=None,
+            app_name=None, bot_user_id: str = "") -> None:
     """Shared path for mention + DM: react, run the agent under telemetry, reply."""
     channel, thread_ts = ix.channel, ix.thread_ts
     _react(client, channel, thread_ts, "eyes")
+    # Recent turns of this thread, so follow-ups ("what about the second one?")
+    # resolve. Empty for a fresh top-level mention; never fatal.
+    #
+    # NB: fetch from the thread's PARENT (`event.thread_ts`, carried on the
+    # context envelope), not `ix.thread_ts`. The latter is the message's own ts
+    # — deliberately so, since replying with it roots Cairn's answer under the
+    # mention — but asking conversations_replies for a *reply's* ts returns only
+    # that one message, which is how this silently fetched nothing.
+    parent_ts = event_ctx.get("thread_ts") or thread_ts
+    event_ctx = {**event_ctx, "thread": _thread_history(
+        client, channel, parent_ts, event_ctx.get("ts") or "", bot_user_id)}
     try:
         with obs.record(ix):
             run = run_agent(
@@ -301,6 +427,13 @@ def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachmen
             ix.from_run(run)
             say(text=run.text or "_(no response)_", thread_ts=thread_ts)
         _swap(client, channel, thread_ts, "white_check_mark")
+    except TransientModelError as err:
+        # Provider was rate-limited / overloaded and retries ran out. Say so in
+        # words — silence (or a stack trace) is what this used to look like.
+        logger.warning("model unavailable rid=%s: %s", ix.request_id, err)
+        _swap(client, channel, thread_ts, "warning")
+        say(text=":warning: The model is busy or rate-limited right now — "
+                 "try me again in a moment.", thread_ts=thread_ts)
     except Exception as err:  # noqa: BLE001
         logger.exception("agent invocation failed rid=%s", ix.request_id)
         _swap(client, channel, thread_ts, "warning")
@@ -498,7 +631,9 @@ def _build_app(cfg: AppConfig) -> App:
         # Action-item detection: runs after Jira checks, before the agent.
         _detect_action_item(text, raw_text, ix.channel, event.get("ts"), event.get("team"), cfg.name, client=client)
 
-        _answer(ix, _ctx(event), say, client, logger, attachments=attachments, app_name=cfg.name)
+        _dispatch(_answer, ix, _ctx(event), say, client, logger,
+                  attachments=attachments, app_name=cfg.name,
+                  bot_user_id=cfg.bot_user_id)
 
     @app.event("message")
     def on_message(event, say, client, logger):
@@ -542,7 +677,9 @@ def _build_app(cfg: AppConfig) -> App:
             prompt=text or "(see attached file)",
         )
         log.info("[%s] dm rid=%s channel=%s user=%s files=%d", cfg.name, ix.request_id, channel, user, len(attachments))
-        _answer(ix, _ctx(event), say, client, logger, attachments=attachments, app_name=cfg.name)
+        _dispatch(_answer, ix, _ctx(event), say, client, logger,
+                  attachments=attachments, app_name=cfg.name,
+                  bot_user_id=cfg.bot_user_id)
 
     @app.command("/loop")
     def on_loop(ack, respond, command):
@@ -578,6 +715,9 @@ def _ctx(event: dict) -> dict:
         "channel_type": event.get("channel_type"),
         "team": event.get("team"),
         "thread_ts": event.get("thread_ts") or event.get("ts"),
+        "ts": event.get("ts"),
+        # threaded reply? (Slack only sends thread_ts when the message is one)
+        "in_thread": bool(event.get("thread_ts")),
     }
 
 

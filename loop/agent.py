@@ -21,8 +21,11 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import random
 import re
 import shlex
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -420,6 +423,91 @@ def remember(content: str, *, context: dict[str, Any] | None = None,
         reqctx.reset_current(token)
 
 
+# ── Resilience ───────────────────────────────────────────────────────────────
+# A provider hiccup used to reach the user as silence: MiniMax started returning
+# 429s and Cairn simply never replied (the SDK retried twice, gave up, and the
+# exception surfaced as a bare stack trace). Transient failures now get bounded
+# retries with exponential backoff + jitter, and a caller can tell a transient
+# failure from a real one so the reply can say which.
+#
+#   CAIRN_MODEL_RETRIES=2        extra attempts after the first  (0 = off)
+#   CAIRN_MODEL_RETRY_BASE_MS=600  first backoff; doubles each attempt
+_RETRYABLE_MARKERS = (
+    "429", "rate limit", "rate_limit", "too many requests", "quota",
+    "usage limit", "limit reached", "resource exhausted", "resource_exhausted",
+    "500", "502", "503", "504", "overloaded", "unavailable", "internal error",
+    "timeout", "timed out", "connection reset", "connection error",
+    "temporarily", "try again",
+)
+
+
+class TransientModelError(RuntimeError):
+    """The model call failed in a way that is worth retrying later.
+
+    Raised after retries are exhausted so the Slack layer can say "busy, try
+    again" instead of showing a stack trace."""
+
+
+def _is_transient(err: BaseException) -> bool:
+    """Classify by message text, not exception type: each provider SDK raises its
+    own class (anthropic.RateLimitError, google ClientError, httpx timeouts), and
+    we deliberately do not import every SDK to catch them."""
+    text = f"{type(err).__name__} {err}".lower()
+    return any(m in text for m in _RETRYABLE_MARKERS)
+
+
+def _retries() -> int:
+    try:
+        return max(0, int(os.environ.get("CAIRN_MODEL_RETRIES", "2")))
+    except ValueError:
+        return 2
+
+
+def _retry_base_s() -> float:
+    try:
+        return max(0.0, float(os.environ.get("CAIRN_MODEL_RETRY_BASE_MS", "600")) / 1000)
+    except ValueError:
+        return 0.6
+
+
+_agent_lock = threading.Lock()
+
+
+def _invoke(agent: Agent, message: Any) -> Any:
+    """Run one agent turn, retrying transient provider failures with backoff.
+
+    A non-transient error (bad request, auth, a bug in a tool) is re-raised
+    immediately — retrying those just multiplies the damage.
+
+    **Each turn starts from a clean slate.** A Strands ``Agent`` accumulates
+    ``messages`` across calls, and ours is cached per app — so without this reset
+    one cached agent would carry every user's turns from every channel into every
+    subsequent request: cross-channel leakage, and a prompt that grows without
+    bound until it blows the context window. Continuity comes from the *thread*
+    context (correctly scoped to one Slack thread) and long-term memory, not from
+    a shared in-process transcript. The lock keeps the reset and the turn atomic
+    now that Slack events are handled off the socket thread.
+    """
+    attempts = _retries() + 1
+    last: BaseException | None = None
+    for i in range(attempts):
+        try:
+            with _agent_lock:
+                agent.messages = []
+                return agent(message)
+        except BaseException as err:  # noqa: BLE001 - classified below, re-raised
+            last = err
+            if not _is_transient(err):
+                raise
+            if i == attempts - 1:
+                break
+            delay = _retry_base_s() * (2 ** i) * (1 + random.random() * 0.25)
+            log.warning("transient model error (attempt %d/%d), retrying in %.1fs: %s",
+                        i + 1, attempts, delay, err)
+            time.sleep(delay)
+    raise TransientModelError(str(last)) from last
+
+
 def _build_agent(app_name: str | None = None, model_id: str | None = None) -> Agent:
     """Build an agent for one app. Caller is responsible for holding any MCP context.
 
@@ -493,7 +581,7 @@ def run(
     try:
         clients = _mcp_clients(app_name)
         if not clients:
-            return _result_to_run(get_agent(app_name, model_id)(message), state)
+            return _result_to_run(_invoke(get_agent(app_name, model_id), message), state)
         with contextlib.ExitStack() as stack:
             for c in clients:
                 stack.enter_context(c)
@@ -502,7 +590,7 @@ def run(
                 tools.extend(c.list_tools_sync())
             agent = _build_agent(app_name, model_id)
             agent.tool_registry.process_tools(tools)
-            return _result_to_run(agent(message), state)
+            return _result_to_run(_invoke(agent, message), state)
     finally:
         reqctx.reset_current(token)
 
@@ -518,6 +606,13 @@ def _apply_provenance(state: reqctx.RequestState, context: dict[str, Any] | None
 
 
 def _with_context(prompt: str, context: dict[str, Any] | None) -> str:
+    """Prefix the request with who/where, plus the recent turns of this thread.
+
+    The thread block is what makes a follow-up ("what about the second one?")
+    resolvable — long-term memory holds durable facts, not the last three
+    messages. It is rendered as plain labelled lines rather than a chat
+    transcript so the model cannot mistake it for its own instructions.
+    """
     if not context:
         return prompt
     bits: list[str] = []
@@ -527,9 +622,25 @@ def _with_context(prompt: str, context: dict[str, Any] | None) -> str:
         bits.append(f"in channel <#{context['channel']}>")
     if context.get("channel_type"):
         bits.append(f"({context['channel_type']})")
-    if not bits:
-        return prompt
-    return f"[context] message {' '.join(bits)}\n\n{prompt}"
+
+    header = f"[context] message {' '.join(bits)}" if bits else ""
+    thread = _format_thread(context.get("thread"))
+    preamble = "\n\n".join(p for p in (header, thread) if p)
+    return f"{preamble}\n\n{prompt}" if preamble else prompt
+
+
+def _format_thread(turns: Any) -> str:
+    """Render prior thread turns for the prompt. ``turns`` is a list of
+    ``{"speaker", "text"}`` oldest-first, already bounded by the caller."""
+    if not turns:
+        return ""
+    lines = [f"{t.get('speaker', '?')}: {t.get('text', '')}" for t in turns
+             if t.get("text")]
+    if not lines:
+        return ""
+    body = "\n".join(lines)
+    return ("[thread so far — earlier messages in this Slack thread, oldest "
+            f"first; 'you' is Cairn]\n{body}")
 
 
 # Slack mimetype → Strands image block format. Anything not listed (text/code/
