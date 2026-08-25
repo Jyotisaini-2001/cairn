@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
+from loop import conversation
 from loop import observability as obs
 from loop.agent import TransientModelError
 from loop.agent import run as run_agent, remember as remember_memory
@@ -342,61 +343,26 @@ def _dispatch(fn, *args, **kwargs) -> None:
     _pool().submit(_run)
 
 
-# ── Thread context ───────────────────────────────────────────────────────────
-# Without this every turn is answered blind: "what about the second one?" has no
-# referent, because long-term memory is the only state the agent carries. We pass
-# the recent turns of the *current thread* so a conversation can actually be a
-# conversation. Bounded by CAIRN_THREAD_CONTEXT_LIMIT (turns) and a char cap, and
-# switchable off with CAIRN_THREAD_CONTEXT=off — it is tokens on every request.
-_THREAD_CTX_CHAR_CAP = 4000
-
-
+# ── Conversation context ─────────────────────────────────────────────────────
+# The fetch/normalise logic lives in `loop.conversation` so that context,
+# capture and backfill all read a conversation the same way. These stay as thin
+# wrappers because the flags are read per-request (tests flip them at runtime).
 def _thread_context_enabled() -> bool:
-    return os.environ.get("CAIRN_THREAD_CONTEXT", "on").strip().lower() not in {
-        "off", "0", "false", "no"}
+    return conversation._flag("CAIRN_THREAD_CONTEXT")
 
 
 def _thread_limit() -> int:
-    try:
-        return max(0, int(os.environ.get("CAIRN_THREAD_CONTEXT_LIMIT", "10")))
-    except ValueError:
-        return 10
+    return conversation._int_env("CAIRN_THREAD_CONTEXT_LIMIT", 10)
 
 
 def _thread_history(client, channel: str, thread_ts: str, current_ts: str,
                     bot_user_id: str) -> list[dict]:
-    """Recent turns of this thread, oldest first, excluding the current message.
-
-    Returns ``[{"speaker": "you"|"user"|"<@Uxxx>", "text": ...}]``. Never raises:
-    a missing scope or an API hiccup degrades to no context, not a failed reply.
-    """
-    limit = _thread_limit()
-    if not (_thread_context_enabled() and limit and thread_ts):
+    """Recent turns of this thread, oldest first, excluding the current message."""
+    if not _thread_context_enabled():
         return []
-    try:
-        resp = client.conversations_replies(
-            channel=channel, ts=thread_ts, limit=limit + 1,
-        )
-    except Exception as err:  # noqa: BLE001
-        log.info("thread context unavailable (channel=%s): %s", channel, err)
-        return []
-
-    turns: list[dict] = []
-    for m in resp.get("messages", []) or []:
-        if m.get("ts") == current_ts:      # the message we are answering
-            continue
-        text = _strip_mentions(m.get("text", "") or "").strip()
-        if not text:
-            continue
-        speaker = "you" if m.get("bot_id") or m.get("user") == bot_user_id \
-            else f"<@{m.get('user')}>"
-        turns.append({"speaker": speaker, "text": text})
-
-    turns = turns[-limit:]
-    # Trim oldest-first until under the char cap, so a giant thread cannot blow
-    # up the prompt.
-    while turns and sum(len(t["text"]) for t in turns) > _THREAD_CTX_CHAR_CAP:
-        turns.pop(0)
+    turns = conversation.read_thread(
+        client, channel, thread_ts, exclude_ts=current_ts,
+        bot_user_id=bot_user_id, limit=_thread_limit())
     log.info("thread context: %d turn(s) (thread_ts=%s current_ts=%s)",
              len(turns), thread_ts, current_ts)
     return turns
@@ -416,8 +382,12 @@ def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachmen
     # mention — but asking conversations_replies for a *reply's* ts returns only
     # that one message, which is how this silently fetched nothing.
     parent_ts = event_ctx.get("thread_ts") or thread_ts
-    event_ctx = {**event_ctx, "thread": _thread_history(
-        client, channel, parent_ts, event_ctx.get("ts") or "", bot_user_id)}
+    event_ctx = {**event_ctx, "thread": conversation.read_context(
+        client, channel,
+        thread_ts=parent_ts,
+        in_thread=bool(event_ctx.get("in_thread")),
+        current_ts=event_ctx.get("ts") or "",
+        bot_user_id=bot_user_id)}
     try:
         with obs.record(ix):
             run = run_agent(

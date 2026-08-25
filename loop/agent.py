@@ -441,6 +441,35 @@ _RETRYABLE_MARKERS = (
 )
 
 
+# Providers often say exactly how long to wait — Gemini returns
+# `"retryDelay": "29s"` on a 429, Anthropic/OpenAI use Retry-After. Ignoring it
+# and backing off 0.6s for a 30s window just burns the remaining attempts, which
+# is precisely what happened on the Gemini free tier (20 req/min).
+_RETRY_HINT_RE = re.compile(
+    r"(?:retrydelay\"?\s*[:=]\s*\"?|retry-after\"?\s*[:=]\s*\"?|retry in\s+)"
+    r"(\d+(?:\.\d+)?)\s*s?\b", re.IGNORECASE)
+
+
+def _retry_hint_s(err: BaseException) -> float | None:
+    """Seconds the provider asked us to wait, if it said so."""
+    m = _RETRY_HINT_RE.search(str(err))
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+def _max_backoff_s() -> float:
+    """Ceiling on a single wait. A provider hint of 10 minutes is not worth
+    holding a Slack turn open for; we give up and say so instead."""
+    try:
+        return max(1.0, float(os.environ.get("CAIRN_MODEL_RETRY_MAX_S", "45")))
+    except ValueError:
+        return 45.0
+
+
 class TransientModelError(RuntimeError):
     """The model call failed in a way that is worth retrying later.
 
@@ -501,7 +530,10 @@ def _invoke(agent: Agent, message: Any) -> Any:
                 raise
             if i == attempts - 1:
                 break
-            delay = _retry_base_s() * (2 ** i) * (1 + random.random() * 0.25)
+            # Prefer what the provider told us; fall back to exponential backoff.
+            hint = _retry_hint_s(err)
+            delay = hint if hint is not None else _retry_base_s() * (2 ** i)
+            delay = min(delay, _max_backoff_s()) * (1 + random.random() * 0.1)
             log.warning("transient model error (attempt %d/%d), retrying in %.1fs: %s",
                         i + 1, attempts, delay, err)
             time.sleep(delay)

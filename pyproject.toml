@@ -34,6 +34,10 @@ providers = [
 ]
 
 [project.scripts]
+# `cairn` is the name; `loop`/`loop-eval` stay as aliases so existing muscle
+# memory and any scripts keep working until the package rename lands.
+cairn = "loop.main:main"
+cairn-eval = "loop.eval:main"
 loop = "loop.main:main"
 loop-eval = "loop.eval:main"
 

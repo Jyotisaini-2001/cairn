@@ -92,3 +92,61 @@ def test_success_path_calls_once():
 def teardown_module(_m):
     os.environ.pop("CAIRN_MODEL_RETRIES", None)
     os.environ.pop("CAIRN_MODEL_RETRY_BASE_MS", None)
+
+
+# ------------------------------------------------------- provider retry hints
+class Recorder:
+    """Agent stub that records how long each retry waited."""
+
+    def __init__(self, err, fail_times=99):
+        self.err, self.fail_times, self.calls = err, fail_times, 0
+
+    def __call__(self, _m):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            raise self.err
+        return "ok"
+
+
+import pytest as _pytest  # noqa: E402
+
+
+@_pytest.mark.parametrize("text,expected", [
+    ('{"retryDelay": "29s"}', 29.0),          # Gemini's literal shape
+    ("Please retry in 30.95s.", 30.95),       # Gemini's prose shape
+    ("Retry-After: 12", 12.0),                # Anthropic / OpenAI header
+    ("just a 429, no hint", None),
+])
+def test_provider_retry_hint_is_parsed(text, expected):
+    from loop.agent import _retry_hint_s
+    assert _retry_hint_s(RuntimeError(text)) == expected
+
+
+def test_hint_is_preferred_over_exponential_backoff(monkeypatch):
+    """Backing off 0.6s for a window the provider says is 29s just burns the
+    remaining attempts — which is exactly what happened on Gemini's free tier."""
+    from loop import agent as ag
+
+    waited = []
+    monkeypatch.setattr(ag.time, "sleep", waited.append)
+    os.environ["CAIRN_MODEL_RETRIES"] = "2"
+    os.environ["CAIRN_MODEL_RETRY_BASE_MS"] = "600"
+
+    with _pytest.raises(ag.TransientModelError):
+        ag._invoke(Recorder(RuntimeError('429 {"retryDelay": "29s"}')), "hi")
+
+    assert waited and all(29 <= w <= 33 for w in waited), waited
+
+
+def test_absurd_hint_is_capped(monkeypatch):
+    from loop import agent as ag
+
+    waited = []
+    monkeypatch.setattr(ag.time, "sleep", waited.append)
+    monkeypatch.setenv("CAIRN_MODEL_RETRY_MAX_S", "10")
+    os.environ["CAIRN_MODEL_RETRIES"] = "1"
+
+    with _pytest.raises(ag.TransientModelError):
+        ag._invoke(Recorder(RuntimeError('429 retry in 600s')), "hi")
+
+    assert waited and all(w <= 11 for w in waited), waited
