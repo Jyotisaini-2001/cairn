@@ -225,7 +225,7 @@ def _strip_mentions(text: str) -> str:
 # go to the model natively (MiniMax M3 is multimodal); text/code/json files are
 # inlined as text; PDFs are extracted to text (pypdf) by the agent.
 _FILE_ALLOWED = ("image/", "text/", "application/json", "application/pdf")
-_FILE_MAX_BYTES = int(os.environ.get("LOOP_MAX_FILE_BYTES", str(8 * 1024 * 1024)) or 0)
+_FILE_MAX_BYTES = int(os.environ.get("CAIRN_MAX_FILE_BYTES", str(8 * 1024 * 1024)) or 0)
 
 
 def _download(url: str, token: str) -> bytes:
@@ -269,7 +269,7 @@ def _detect_action_item(
     client=None,
 ) -> None:
     """Detect and save action items. Adds a 📋 reaction when one is found so users know it was captured."""
-    if os.environ.get("LOOP_ACTION_ITEMS", "").lower() not in {"on", "true", "1"}:
+    if os.environ.get("CAIRN_ACTION_ITEMS", "").lower() not in {"on", "true", "1"}:
         return
     if not text or not looks_like_action_item(text):
         return
@@ -327,7 +327,7 @@ def _discover_apps() -> list[AppConfig]:
       • Bare pair (back-compat):  SLACK_BOT_TOKEN + SLACK_APP_TOKEN  → one app,
           named by SLACK_APP_NAME (default "loop").
     Each app gets its own Bolt App + Socket Mode connection in `start()`, and its
-    own agent persona (LOOP_PERSONA_<NAME>).
+    own agent persona (CAIRN_PERSONA_<NAME>).
     """
     pairs: dict[str, dict[str, str]] = {}
     for key, val in os.environ.items():
@@ -524,7 +524,7 @@ def _build_app(cfg: AppConfig) -> App:
         if channel_type != "im":
             _detect_action_item(text, raw, channel, event.get("ts"), event.get("team"), cfg.name, client=client)
             # Passively capture decisions/commitments Loop only observes (off unless
-            # LOOP_MEMORY_CAPTURE=on) so recall works without an explicit @Loop turn.
+            # CAIRN_MEMORY_CAPTURE=on) so recall works without an explicit @Loop turn.
             memory_capture.capture(text, author=user, channel=channel, team=event.get("team"), source=cfg.name)
             return  # observe-only (channel chatter) — not a DM to Loop
         if "<@" in raw:
@@ -591,7 +591,7 @@ def _ctx_cmd(command: dict) -> dict:
 
 
 # ── Native Slack AI "Assistant" surface (Slack AI capabilities) ───────────────
-# Opt-in via LOOP_SLACK_ASSISTANT=on. Requires, on the Slack app: the "Agents & AI
+# Opt-in via CAIRN_SLACK_ASSISTANT=on. Requires, on the Slack app: the "Agents & AI
 # Apps" feature enabled, the `assistant:write` scope, and the `assistant_thread_*`
 # events subscribed. Routes the same single Strands agent into the assistant pane
 # (side panel / app DM) with suggested prompts + a live "is thinking…" status.
@@ -603,7 +603,7 @@ _SUGGESTED_PROMPTS = [
 
 
 def _assistant_enabled() -> bool:
-    return os.environ.get("LOOP_SLACK_ASSISTANT", "off").strip().lower() in {"on", "1", "true", "yes"}
+    return os.environ.get("CAIRN_SLACK_ASSISTANT", "off").strip().lower() in {"on", "1", "true", "yes"}
 
 
 def _attach_assistant(app: "App", cfg: "AppConfig") -> None:
@@ -703,7 +703,7 @@ def start() -> None:  # pragma: no cover
         handler.connect()  # non-blocking: opens this app's socket on a background thread
         log.info("loop: Slack app %r connected (socket mode)", cfg.name)
     log.info("loop: %d app(s) running: %s", len(configs), ", ".join(c.name for c in configs))
-    # Ambient (proactive PM) mode — off unless LOOP_AMBIENT=on; one daemon per app.
+    # Ambient (proactive PM) mode — off unless CAIRN_AMBIENT=on; one daemon per app.
     from loop import ambient  # noqa: PLC0415 (optional path; keeps import cost off the default)
 
     ambient.maybe_start(configs)

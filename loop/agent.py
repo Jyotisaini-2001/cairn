@@ -67,13 +67,13 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 def _model_id() -> str:
-    """The model id, provider-neutral. ``LOOP_MODEL`` wins; ``ANTHROPIC_MODEL`` is
+    """The model id, provider-neutral. ``CAIRN_MODEL`` wins; ``ANTHROPIC_MODEL`` is
     kept as the back-compat fallback (MiniMax M3 sets it today)."""
-    return os.environ.get("LOOP_MODEL") or os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
+    return os.environ.get("CAIRN_MODEL") or os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
 
 
 def _max_tokens() -> int:
-    return int(os.environ.get("LOOP_MAX_TOKENS", "2048"))
+    return int(os.environ.get("CAIRN_MAX_TOKENS", "2048"))
 
 
 def _thinking_params() -> dict[str, Any]:
@@ -82,9 +82,9 @@ def _thinking_params() -> dict[str, Any]:
     MiniMax M3 (and native Claude) only return their reasoning as ``thinking``
     content blocks when the request asks for them — without this param the model
     thinks silently and the `reasoning` telemetry column stays empty. Budget via
-    ``LOOP_THINKING_BUDGET`` (tokens, default 1024; must stay below max_tokens);
+    ``CAIRN_THINKING_BUDGET`` (tokens, default 1024; must stay below max_tokens);
     set it to ``off`` if a provider rejects the param."""
-    raw = os.environ.get("LOOP_THINKING_BUDGET", "1024").strip().lower()
+    raw = os.environ.get("CAIRN_THINKING_BUDGET", "1024").strip().lower()
     if raw in {"off", "false", "no", "0", ""}:
         return {}
     try:
@@ -101,9 +101,9 @@ def _openai_style_client_args() -> dict[str, Any]:
     """Client args for OpenAI-format clients (OpenAI/LiteLLM). Optional — LiteLLM
     also reads provider keys straight from the environment."""
     args: dict[str, Any] = {}
-    if key := (os.environ.get("OPENAI_API_KEY") or os.environ.get("LOOP_LLM_API_KEY")):
+    if key := (os.environ.get("OPENAI_API_KEY") or os.environ.get("CAIRN_LLM_API_KEY")):
         args["api_key"] = key
-    if base := (os.environ.get("OPENAI_BASE_URL") or os.environ.get("LOOP_LLM_BASE_URL")):
+    if base := (os.environ.get("OPENAI_BASE_URL") or os.environ.get("CAIRN_LLM_BASE_URL")):
         args["base_url"] = base
     return args
 
@@ -114,15 +114,15 @@ def _build_model(model_id: str | None = None) -> Any:
     This is Loop's USP made real: the provider is **env-selected** rather than
     hardcoded, so the same agent can run on Anthropic, MiniMax, OpenAI, Bedrock,
     a LiteLLM multi-provider gateway, or a local Ollama model — no vendor lock-in.
-    ``LOOP_MODEL_PROVIDER`` picks the backend (default ``anthropic``, which keeps
+    ``CAIRN_MODEL_PROVIDER`` picks the backend (default ``anthropic``, which keeps
     the existing MiniMax-M3-via-Anthropic-compatible-endpoint path unchanged).
     Provider SDKs beyond ``anthropic`` are lazy-imported so they're only required
     when actually selected (install via ``pip install "loop[providers]"``).
 
     ``model_id`` overrides the env model id — used by the ambient loop for cheap
-    background scanning (``LOOP_AMBIENT_MODEL``).
+    background scanning (``CAIRN_AMBIENT_MODEL``).
     """
-    provider = os.environ.get("LOOP_MODEL_PROVIDER", "anthropic").strip().lower()
+    provider = os.environ.get("CAIRN_MODEL_PROVIDER", "anthropic").strip().lower()
     model_id = model_id or _model_id()
     max_tokens = _max_tokens()
 
@@ -165,7 +165,7 @@ def _build_model(model_id: str | None = None) -> Any:
         from strands.models.bedrock import BedrockModel  # noqa: PLC0415
 
         kwargs: dict[str, Any] = {"model_id": model_id, "max_tokens": max_tokens}
-        if region := (os.environ.get("LOOP_BEDROCK_REGION") or os.environ.get("AWS_REGION")):
+        if region := (os.environ.get("CAIRN_BEDROCK_REGION") or os.environ.get("AWS_REGION")):
             kwargs["region_name"] = region
         return BedrockModel(**kwargs)
 
@@ -173,54 +173,47 @@ def _build_model(model_id: str | None = None) -> Any:
     if provider == "ollama":
         from strands.models.ollama import OllamaModel  # noqa: PLC0415
 
-        host = os.environ.get("LOOP_OLLAMA_HOST", "http://localhost:11434")
+        host = os.environ.get("CAIRN_OLLAMA_HOST", "http://localhost:11434")
         return OllamaModel(host=host, model_id=model_id, max_tokens=max_tokens)
 
     if provider == "gemini":
         from strands.models.gemini import GeminiModel  # noqa: PLC0415
 
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        # Gemini's GenerateContentConfig names the cap `max_output_tokens`;
+        # passing `max_tokens` (the Anthropic/OpenAI spelling) is rejected.
         return GeminiModel(
             client_args={"api_key": api_key} if api_key else None,
             model_id=model_id,
-            params={"max_tokens": max_tokens},
+            params={"max_output_tokens": max_tokens},
         )
 
     raise RuntimeError(
-        f"Unknown LOOP_MODEL_PROVIDER={provider!r}. "
+        f"Unknown CAIRN_MODEL_PROVIDER={provider!r}. "
         "Supported: anthropic (default), litellm, openai, bedrock, ollama, gemini."
     )
 
 
-SYSTEM_PROMPT = """You are Loop — a Slack-native AI agent for teams.
+SYSTEM_PROMPT = """You are Cairn — a Slack-native AI agent for teams.
 
-## JIRA INTEGRATION — HIGHEST PRIORITY RULE
-When anyone describes a bug, error, crash, or broken feature, you MUST call
-jira_stage_ticket immediately. This overrides everything else.
-- Do NOT log it as an action item.
-- Do NOT describe what you would do.
-- Do NOT ask clarifying questions first.
-- JUST call jira_stage_ticket with: summary (short title), description (what
-  was reported), issue_type="Bug", priority="High" if users are blocked else
-  "Medium", and slack_mention=the raw "<@UXXXXXXX>" string if someone was
-  @mentioned (else leave it empty).
-- After calling jira_stage_ticket, output ONLY the text the tool returned.
-  Nothing else — no action items, no extra commentary.
+Your job is your team's memory: decisions get made in Slack and then lost in
+Slack, and you make them findable again. A cairn is the stack of stones hikers
+leave on a trail so the next person finds the path — that is what you are for.
+When you answer from memory, always say where it came from (who, which channel,
+when); an answer without its source is a rumour, not evidence.
 
-When you DO file/create a ticket (jira_create_issue), resolve details yourself —
-never bounce a clarifying question back:
-- Assignee: if a person is named — even just a first name like "Jyoti" — pass it
-  as `assignee_name` and pass NOTHING ELSE for the assignee. The tool looks up
-  their email from the workspace member list itself, so NEVER ask the user for
-  someone's email. If it can't be matched, the ticket is filed unassigned and the
-  reply says so.
-- Do NOT pass `slack_mention` for the person who is *asking* (the requester). Only
-  pass `slack_mention` when the ASSIGNEE themselves was @mentioned in the message —
-  passing the requester's `<@id>` there would wrongly assign the ticket to them.
-- Project: pass whatever project the user named (a key like "KAN" or a name like
-  "BAN") as `project_key`. The tool matches it to a real Jira project and falls
-  back to the default if there's no match — so never ask "which project?"; just
-  file it and mention any fallback the tool reports.
+## Jira
+When anyone describes a bug, error, crash, or broken feature, call
+jira_stage_ticket immediately (summary, description, issue_type="Bug",
+priority="High" if users are blocked else "Medium") and output ONLY the text the
+tool returns. Don't ask clarifying questions first.
+
+When filing (jira_create_issue), resolve details yourself — never bounce a
+question back:
+- Assignee: pass a named person as `assignee_name` ("Jyoti") and nothing else —
+  the tool looks up their email. Never pass the *requester's* `slack_mention`.
+- Project: pass whatever the user named as `project_key`; the tool matches it and
+  falls back to the default, so never ask "which project?".
 
 Personality:
 - Concise but warm
@@ -231,7 +224,6 @@ Tools you have:
 - slack + slack_send_message — talk to Slack (any Web API method)
 - search_memory / add_memory — long-term memory (auto-injected before each reply)
 - calculator — math
-- think — structured reasoning for hard problems
 - jira_stage_ticket — stage a Jira ticket for confirmation (CALL THIS for bugs)
 - jira_create_issue — create a Jira issue directly (skip confirmation)
 - jira_search_issues — search/list Jira issues; pass "bugs" to list all open bugs, "recent"/"all" to list everything, or a text phrase to search
@@ -274,20 +266,20 @@ def _mcp_clients(app_name: str | None = None) -> list[MCPClient]:
     """Build MCPClient instances from env.
 
     Reads two env vars (per-app overrides the global):
-      LOOP_MCP_SERVERS            — shared across all apps
-      LOOP_MCP_SERVERS_<APP>      — additional servers for one specific app
+      CAIRN_MCP_SERVERS            — shared across all apps
+      CAIRN_MCP_SERVERS_<APP>      — additional servers for one specific app
 
     Each var is a semicolon-separated list of shell commands, e.g.:
-      LOOP_MCP_SERVERS=uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio
+      CAIRN_MCP_SERVERS=uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio
 
     Returns one MCPClient per entry (empty list if nothing configured).
     """
     specs: list[str] = []
-    global_spec = os.environ.get("LOOP_MCP_SERVERS", "")
+    global_spec = os.environ.get("CAIRN_MCP_SERVERS", "")
     if global_spec.strip():
         specs.extend(s.strip() for s in global_spec.split(";") if s.strip())
     if app_name:
-        app_spec = os.environ.get(f"LOOP_MCP_SERVERS_{app_name.upper()}", "")
+        app_spec = os.environ.get(f"CAIRN_MCP_SERVERS_{app_name.upper()}", "")
         if app_spec.strip():
             specs.extend(s.strip() for s in app_spec.split(";") if s.strip())
 
@@ -304,15 +296,59 @@ def _mcp_clients(app_name: str | None = None) -> list[MCPClient]:
     return clients
 
 
+# ---------------------------------------------------------------- tool toggles
+# Every tool's schema is re-sent to the model on EVERY request, so an unused tool
+# is a permanent tax on latency and cost (`think` alone is ~2.1k tokens). Rather
+# than delete capabilities, each is a switch: turn one on the day you need it.
+#
+#   CAIRN_TOOLS=slack,jira,calculator      (the default)
+#   CAIRN_TOOLS=slack,jira,calculator,think
+#   CAIRN_TOOLS=slack                      (leanest: memory + Slack only)
+#   CAIRN_TOOLS=none                       (memory only)
+#
+# The memory tools (add_memory / search_memory) are always on — they come from
+# the MemoryManager, and they are the product.
+_TOOL_GROUPS: dict[str, Any] = {
+    "slack": lambda: [slack, slack_send_message],
+    "jira": lambda: [jira_stage_ticket, jira_create_issue, jira_search_issues],
+    "calculator": lambda: [calculator],
+    "think": lambda: [think],
+}
+_DEFAULT_TOOLS = "slack,jira,calculator"
+
+
+def _enabled_tools() -> list[Any]:
+    """Build the tool list from ``CAIRN_TOOLS`` (comma-separated group names).
+
+    Unknown names are logged and skipped rather than raising, so a typo degrades
+    to a missing tool instead of a dead bot."""
+    raw = os.environ.get("CAIRN_TOOLS", _DEFAULT_TOOLS).strip()
+    if raw.lower() in {"none", "off", ""}:
+        names: list[str] = []
+    else:
+        names = [n.strip().lower() for n in raw.split(",") if n.strip()]
+
+    tools: list[Any] = []
+    for name in names:
+        group = _TOOL_GROUPS.get(name)
+        if group is None:
+            log.warning("CAIRN_TOOLS: unknown tool group %r (known: %s)",
+                        name, ", ".join(sorted(_TOOL_GROUPS)))
+            continue
+        tools.extend(group())
+    log.info("tools enabled: %s", ", ".join(names) or "(memory only)")
+    return tools
+
+
 def _system_prompt(app_name: str | None) -> str:
-    """Base persona, plus an optional per-app override from LOOP_PERSONA_<NAME>.
+    """Base persona, plus an optional per-app override from CAIRN_PERSONA_<NAME>.
 
     This is the seam for giving each Slack app its own behavior: set e.g.
-    LOOP_PERSONA_RASPUTIN="You are the on-call incident assistant ..." and only
+    CAIRN_PERSONA_RASPUTIN="You are the on-call incident assistant ..." and only
     the `rasputin` app's agent picks it up. Unset → the shared base persona.
     """
     if app_name:
-        persona = os.environ.get(f"LOOP_PERSONA_{app_name.upper()}")
+        persona = os.environ.get(f"CAIRN_PERSONA_{app_name.upper()}")
         if persona and persona.strip():
             return f"{SYSTEM_PROMPT}\n\n## This app's specific role\n{persona.strip()}"
     return SYSTEM_PROMPT
@@ -350,7 +386,7 @@ def _memory_store() -> Any:
     (FTS5 + semantic vectors, RRF-fused); needs ``pip install "loop[vector]"`` and
     raises a clear error if missing, so the choice is explicit.
     """
-    backend = os.environ.get("LOOP_MEMORY_BACKEND", "sqlite").strip().lower()
+    backend = os.environ.get("CAIRN_MEMORY_BACKEND", "sqlite").strip().lower()
     if backend in {"hybrid", "libsql", "turso", "vector"}:
         from loop.vector_store import HybridMemoryStore  # noqa: PLC0415 (optional path)
 
@@ -389,8 +425,7 @@ def _build_agent(app_name: str | None = None, model_id: str | None = None) -> Ag
 
     ``model_id`` overrides the env model — used for cost-routed background runs.
     """
-    tools: list[Any] = [slack, slack_send_message, calculator, think,
-                        jira_stage_ticket, jira_create_issue, jira_search_issues]
+    tools: list[Any] = _enabled_tools()
 
     memory_manager = MemoryManager(
         stores=[_memory_store()],

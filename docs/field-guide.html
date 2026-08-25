@@ -240,7 +240,7 @@
   </div>
 
   <div class="cap">
-    <div class="trig">Jaimin will update the pricing page by Friday<br><span style="opacity:.55">(plain channel message — no @mention needed; LOOP_ACTION_ITEMS=on)</span></div>
+    <div class="trig">Jaimin will update the pricing page by Friday<br><span style="opacity:.55">(plain channel message — no @mention needed; CAIRN_ACTION_ITEMS=on)</span></div>
     <div class="what">
       <h4>Passive action-item capture</h4>
       <p>Loop observes commitments in channels it's in, extracts owner / task / deadline, stores them, and adds a 📋
@@ -260,7 +260,7 @@
   </div>
 
   <div class="cap">
-    <div class="trig">LOOP_AMBIENT=on<br><span style="opacity:.55">(env — the proactive mode)</span></div>
+    <div class="trig">CAIRN_AMBIENT=on<br><span style="opacity:.55">(env — the proactive mode)</span></div>
     <div class="what">
       <h4>Ambient PM mode</h4>
       <p>A background daemon finds threads that went quiet without resolution and posts one polite, context-aware nudge —
@@ -364,7 +364,7 @@
       <li><b>Rotate the app-level tokens</b> (both apps) → evicts the ghost process. Then <code>auth.test</code> and one smoke mention.</li>
       <li><b>Rotate every secret</b> that was ever shared in chat: Slack bot tokens, MiniMax key, Jira API token.</li>
       <li>Run exactly <b>one</b> <code>loop</code> process. Check <code>ps</code> first. Watch the log while demoing.</li>
-      <li>Decide ambient: <code>LOOP_AMBIENT=off</code> for a tight demo, or on with a 0-hour stale window for the wow moment — never both apps at once.</li>
+      <li>Decide ambient: <code>CAIRN_AMBIENT=off</code> for a tight demo, or on with a 0-hour stale window for the wow moment — never both apps at once.</li>
       <li>Never <code>git checkout / stash</code> while the app is running (DBs are untracked now, but the habit matters).</li>
       <li>Pre-create the demo channel, invite both bots, verify Event Subscriptions (<code>app_mention</code>, <code>message.im</code>) on both apps.</li>
     </ul>

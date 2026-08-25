@@ -65,7 +65,7 @@ def test_thinking_params_default_on() -> None:
     import os
     from loop.agent import _thinking_params
 
-    os.environ.pop("LOOP_THINKING_BUDGET", None)
+    os.environ.pop("CAIRN_THINKING_BUDGET", None)
     got = _thinking_params()
     assert got == {"thinking": {"type": "enabled", "budget_tokens": 1024}}, got
 
@@ -74,15 +74,15 @@ def test_thinking_params_off_and_clamped() -> None:
     import os
     from loop.agent import _thinking_params
 
-    os.environ["LOOP_THINKING_BUDGET"] = "off"
+    os.environ["CAIRN_THINKING_BUDGET"] = "off"
     assert _thinking_params() == {}
     # budget is clamped below max_tokens so the request stays valid
-    os.environ["LOOP_THINKING_BUDGET"] = "999999"
-    os.environ["LOOP_MAX_TOKENS"] = "2048"
+    os.environ["CAIRN_THINKING_BUDGET"] = "999999"
+    os.environ["CAIRN_MAX_TOKENS"] = "2048"
     got = _thinking_params()
     assert got["thinking"]["budget_tokens"] == 2048 - 512, got
-    os.environ.pop("LOOP_THINKING_BUDGET", None)
-    os.environ.pop("LOOP_MAX_TOKENS", None)
+    os.environ.pop("CAIRN_THINKING_BUDGET", None)
+    os.environ.pop("CAIRN_MAX_TOKENS", None)
 
 
 def _main() -> int:

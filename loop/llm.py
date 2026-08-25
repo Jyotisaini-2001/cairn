@@ -20,9 +20,9 @@ log = logging.getLogger("loop.llm")
 # Loop's own bot user ids, skipped when picking a human @mention out of a message.
 # Self-populated at startup: slack_app.start() calls register_bot_id() with each
 # app's auth.test user_id, so this works in ANY workspace (nothing hardcoded).
-# LOOP_BOT_USER_IDS (comma-separated) can seed extra ids for odd setups.
+# CAIRN_BOT_USER_IDS (comma-separated) can seed extra ids for odd setups.
 BOT_IDS: set[str] = {
-    s.strip() for s in os.environ.get("LOOP_BOT_USER_IDS", "").split(",") if s.strip()
+    s.strip() for s in os.environ.get("CAIRN_BOT_USER_IDS", "").split(",") if s.strip()
 }
 _MENTION_RE = re.compile(r"<@([A-Z0-9]+)>")
 

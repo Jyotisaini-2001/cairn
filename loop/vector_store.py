@@ -22,8 +22,8 @@ format, and tools are unchanged — only recall quality differs.
 
 Enable:
     pip install "loop[vector]"
-    LOOP_MEMORY_BACKEND=hybrid          # (libsql/turso/vector are aliases)
-    LOOP_EMBEDDINGS=fastembed           # local, no key. See loop/embeddings.py
+    CAIRN_MEMORY_BACKEND=hybrid          # (libsql/turso/vector are aliases)
+    CAIRN_EMBEDDINGS=fastembed           # local, no key. See loop/embeddings.py
 """
 from __future__ import annotations
 
@@ -83,10 +83,10 @@ class HybridMemoryStore:
         except ImportError as err:  # pragma: no cover
             raise RuntimeError(
                 'libSQL not installed. Run: pip install "loop[vector]" '
-                "(or set LOOP_MEMORY_BACKEND=sqlite for the FTS5-only store)."
+                "(or set CAIRN_MEMORY_BACKEND=sqlite for the FTS5-only store)."
             ) from err
 
-        self.db_path = db_path or os.environ.get("LOOP_VECTOR_DB_PATH", DEFAULT_VECTOR_DB_PATH)
+        self.db_path = db_path or os.environ.get("CAIRN_VECTOR_DB_PATH", DEFAULT_VECTOR_DB_PATH)
         Path(self.db_path).resolve().parent.mkdir(parents=True, exist_ok=True)
         self.embedder = embedder or get_embedder()
         self.dim = self.embedder.dim

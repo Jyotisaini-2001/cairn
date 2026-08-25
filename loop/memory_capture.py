@@ -4,7 +4,7 @@ Today Loop only writes to long-term memory when the agent explicitly calls
 ``add_memory`` during an ``@Loop`` turn — so a decision made in a channel Loop
 merely *observes* is lost, and "what did we decide about X" later finds nothing.
 
-When ``LOOP_MEMORY_CAPTURE=on`` this module distills observe-only channel messages
+When ``CAIRN_MEMORY_CAPTURE=on`` this module distills observe-only channel messages
 that state a **decision** or a **commitment** into a self-contained sentence and
 saves it to Loop's long-term (vector) memory with provenance — so recall works
 even when nobody mentioned Loop. Off by default.
@@ -14,7 +14,7 @@ Kept cheap and quiet with a two-stage filter, mirroring ``action_items.py``:
   2. a focused extraction call that must return ``is_memorable=true``.
 
 Provenance (author / channel / team / source) is stamped so recall stays scoped
-the same way agent-saved memories are (``LOOP_MEMORY_SCOPE``), and exact-content
+the same way agent-saved memories are (``CAIRN_MEMORY_SCOPE``), and exact-content
 dedup on the store side stops the same line being saved twice.
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ _store_inst: Any = None
 
 
 def enabled() -> bool:
-    return os.environ.get("LOOP_MEMORY_CAPTURE", "off").strip().lower() in {"on", "1", "true", "yes"}
+    return os.environ.get("CAIRN_MEMORY_CAPTURE", "off").strip().lower() in {"on", "1", "true", "yes"}
 
 
 def looks_memorable(text: str) -> bool:

@@ -32,7 +32,7 @@ def test_gate_rejects_chitchat() -> None:
 def test_capture_disabled_is_noop() -> None:
     import loop.memory_capture as mc
 
-    os.environ["LOOP_MEMORY_CAPTURE"] = "off"
+    os.environ["CAIRN_MEMORY_CAPTURE"] = "off"
     calls: list = []
     mc._save = lambda content, metadata: calls.append((content, metadata))  # type: ignore[assignment]
     mc._extract_memory = lambda text: "should not run"  # type: ignore[assignment]
@@ -43,7 +43,7 @@ def test_capture_disabled_is_noop() -> None:
 def test_capture_saves_with_provenance() -> None:
     import loop.memory_capture as mc
 
-    os.environ["LOOP_MEMORY_CAPTURE"] = "on"
+    os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     saved: list = []
     mc._save = lambda content, metadata: saved.append((content, metadata))  # type: ignore[assignment]
     mc._extract_memory = lambda text: "Team chose Postgres as the primary DB."  # type: ignore[assignment]
@@ -64,7 +64,7 @@ def test_capture_saves_with_provenance() -> None:
 def test_capture_skips_when_gate_fails_no_llm() -> None:
     import loop.memory_capture as mc
 
-    os.environ["LOOP_MEMORY_CAPTURE"] = "on"
+    os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     called: list = []
     mc._extract_memory = lambda text: called.append(text) or "x"  # type: ignore[assignment]
     mc._save = lambda content, metadata: None  # type: ignore[assignment]
@@ -75,7 +75,7 @@ def test_capture_skips_when_gate_fails_no_llm() -> None:
 def test_capture_skips_when_not_memorable() -> None:
     import loop.memory_capture as mc
 
-    os.environ["LOOP_MEMORY_CAPTURE"] = "on"
+    os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     saved: list = []
     mc._save = lambda content, metadata: saved.append(1)  # type: ignore[assignment]
     mc._extract_memory = lambda text: None  # model says not memorable

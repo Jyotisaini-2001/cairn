@@ -70,7 +70,7 @@ class _FakeClient:
 def test_is_stale() -> None:
     import loop.ambient as amb
 
-    os.environ["LOOP_AMBIENT_STALE_HOURS"] = "24"
+    os.environ["CAIRN_AMBIENT_STALE_HOURS"] = "24"
     now = time.time()
     assert amb._is_stale([{"ts": str(now - 30 * 3600)}]) is True
     assert amb._is_stale([{"ts": str(now - 3600)}]) is False
@@ -92,9 +92,9 @@ def test_discover_from_interactions_finds_stale_only() -> None:
 def test_discover_from_channels_skips_fresh_and_bots() -> None:
     import loop.ambient as amb
 
-    os.environ["LOOP_AMBIENT_STALE_HOURS"] = "24"
-    os.environ["LOOP_AMBIENT_MAX_THREADS"] = "5"
-    os.environ.pop("LOOP_AMBIENT_CHANNELS", None)
+    os.environ["CAIRN_AMBIENT_STALE_HOURS"] = "24"
+    os.environ["CAIRN_AMBIENT_MAX_THREADS"] = "5"
+    os.environ.pop("CAIRN_AMBIENT_CHANNELS", None)
     now = time.time()
     old, fresh = str(now - 30 * 3600), str(now - 3600)
     client = _FakeClient([
@@ -111,7 +111,7 @@ def test_process_thread_posts_then_renudge_guard(monkeypatch=None) -> None:
     import loop.ambient as amb
 
     _fresh_db()
-    os.environ["LOOP_AMBIENT_STALE_HOURS"] = "24"
+    os.environ["CAIRN_AMBIENT_STALE_HOURS"] = "24"
     now = time.time()
     msgs = [{"user": "U1", "text": "who owns the migration?", "ts": str(now - 30 * 3600)}]
     client = _FakeClient(msgs)
@@ -128,7 +128,7 @@ def test_process_thread_noop_does_not_post() -> None:
     import loop.ambient as amb
 
     _fresh_db()
-    os.environ["LOOP_AMBIENT_STALE_HOURS"] = "24"
+    os.environ["CAIRN_AMBIENT_STALE_HOURS"] = "24"
     now = time.time()
     client = _FakeClient([{"user": "U1", "text": "ok thanks all, resolved!", "ts": str(now - 30 * 3600)}])
     amb.run_agent = lambda *a, **k: _FakeRun("NOOP")

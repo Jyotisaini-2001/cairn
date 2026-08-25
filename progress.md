@@ -65,12 +65,12 @@ memory is now **episodic + provenance-stamped + full-text searchable**.
   the store attaches it); surfaced back to the model via a custom injection format.
 - [x] **FTS5 retrieval** — BM25 + recency, sanitized query, `LIKE` fallback.
       No new deps, no API key. Tested in `tests/test_memory.py`.
-- [x] **Hybrid semantic retrieval** — `LOOP_MEMORY_BACKEND=hybrid` adds libSQL/
+- [x] **Hybrid semantic retrieval** — `CAIRN_MEMORY_BACKEND=hybrid` adds libSQL/
       Turso native vector search fused with FTS5 via RRF (`vector_store.py`),
       pluggable embeddings (`fastembed` local, no key). Merged to `main`, verified
       live (memory add→recall through MiniMax M3). See `docs/vector-memory.md`.
 - [x] Exact-content dedup on write (both backends).
-- [x] Per-scope **filtering** in `search()` — `LOOP_MEMORY_SCOPE` (channel default
+- [x] Per-scope **filtering** in `search()` — `CAIRN_MEMORY_SCOPE` (channel default
       / team / global; per-app override) gives Claude-Tag-style per-channel memory
       isolation. Recall-time filter read from `reqctx.memory_scope()` inside each
       store; hybrid store post-filters the semantic leg; dedup scoped to match.
@@ -82,10 +82,10 @@ memory is now **episodic + provenance-stamped + full-text searchable**.
 Guardrails add runaway-loop, repeat, and token-budget circuit breakers. Still
 synchronous/blocking; agent rebuilt per request when MCP is active; no thread context.
 - [x] Circuit breakers (max tool calls, repeats, token budget) via Strands hooks.
-- [x] **Provider factory** (`LOOP_MODEL_PROVIDER`): env-selected model backend
+- [x] **Provider factory** (`CAIRN_MODEL_PROVIDER`): env-selected model backend
       (anthropic/litellm/openai/bedrock/ollama/gemini) — no vendor lock-in — with
       per-run model routing (`model_id` override) for cost-cheap background work.
-- [x] **Ambient mode** (`LOOP_AMBIENT`, off by default): daemon-per-app loop that
+- [x] **Ambient mode** (`CAIRN_AMBIENT`, off by default): daemon-per-app loop that
       follows up on stalled threads (`loop/ambient.py`); pluggable discovery
       (narrow default), live staleness re-check, re-nudge guard, per-app posting.
 - [ ] Timeouts, retries with backoff, graceful degradation on provider errors.
@@ -143,7 +143,7 @@ prompt edit could silently regress quality and we'd never know.
   is now local-only. **(2) Reasoning telemetry fixed** — MiniMax's endpoint
   drifted: it no longer leaks inline `<think>` text and only returns `thinking`
   blocks when the request opts in. `_build_model` now sends
-  `thinking={enabled, LOOP_THINKING_BUDGET (default 1024)}`; verified live
+  `thinking={enabled, CAIRN_THINKING_BUDGET (default 1024)}`; verified live
   (reasoning persisted for real Slack turns). **(3) GHOST PROCESS found** — an
   old (~663e9a2-era) Loop instance on another machine shares the Rasputin app
   token; Socket Mode round-robins events to it, which is why past fixes "didn't
@@ -154,7 +154,7 @@ prompt edit could silently regress quality and we'd never know.
   fallback; the "default email" users see is the *reporter* = JIRA_USERNAME,
   inherent to API-token auth). **(5) BOT_IDS unhardcoded** — each app
   self-registers its bot user id via `auth.test` at startup (works in any
-  workspace; `LOOP_BOT_USER_IDS` seeds extras). **(6) Credential sweep clean** —
+  workspace; `CAIRN_BOT_USER_IDS` seeds extras). **(6) Credential sweep clean** —
   no secrets in code/history/DBs; `.env` tokens were once shared in chat →
   ROTATE all before submission. Tests 46/46. Hackathon field-guide artifact
   (capabilities/triggers, demo script, positioning, knowns/unknowns) published.
@@ -219,16 +219,16 @@ prompt edit could silently regress quality and we'd never know.
   deterministic staging path.
   **(4) Ambient + memory extended.** Ambient (per decision) **never** stages/creates
   Jira tickets — it may only *suggest* one in words; a human must ask (prompt tweak
-  only). New `loop/memory_capture.py` (off unless `LOOP_MEMORY_CAPTURE=on`): decisions/
+  only). New `loop/memory_capture.py` (off unless `CAIRN_MEMORY_CAPTURE=on`): decisions/
   commitments in channels Loop merely **observes** are distilled (regex gate → focused
   model call) and saved to the long-term (vector) store **with provenance**, so
   "what did we decide about X" recall works without an `@Loop` turn (gaps B/I/K).
-  Scoped by `LOOP_MEMORY_SCOPE`; exact-content dedup on the store side.
+  Scoped by `CAIRN_MEMORY_SCOPE`; exact-content dedup on the store side.
   **Tests:** +22 (`test_reasoning` 6, `test_jira` 10, `test_memory_capture` 6), all
   green; existing suites still 17/17. Golden set: `<think>`/`</think>` added to
   `must_not_contain` on `identity` + `reasoning-tradeoff` as a leak regression guard.
   `.env.example` now documents the (previously undocumented) `JIRA_*` block +
-  `LOOP_MEMORY_CAPTURE`. **Open:** live round-trip on Rasputin_Loop (thinking hidden,
+  `CAIRN_MEMORY_CAPTURE`. **Open:** live round-trip on Rasputin_Loop (thinking hidden,
   Jyoti auto-assigned, BAN/KAN resolved); near-dup memory dedup for captured decisions.
 - **2026-07-06 (feat/jira-auto-triage → development)** — **Jira auto-triage shipped
   (Gap F: manual data movement). Verified live on Rasputin_Loop.** Four workstreams:
@@ -258,22 +258,22 @@ prompt edit could silently regress quality and we'd never know.
     response to Anthropic's Claude Tag launch; the USP is the one thing Claude Tag
     can't be — open + provider-agnostic + self-hostable. Four workstreams:
     **(A) Provider factory** — `agent._build_model()` is now env-selected
-    (`LOOP_MODEL_PROVIDER`: anthropic default / litellm / openai / bedrock / ollama
+    (`CAIRN_MODEL_PROVIDER`: anthropic default / litellm / openai / bedrock / ollama
     / gemini), non-anthropic SDKs lazy-imported behind a new `[providers]` extra;
     default path unchanged (MiniMax M3 still works; verified live, MiniMax-M3 reply
-    through the factory). `LOOP_MODEL`/`LOOP_MAX_TOKENS` added; `model_id` override
+    through the factory). `CAIRN_MODEL`/`CAIRN_MAX_TOKENS` added; `model_id` override
     threaded through `_build_model`/`get_agent`/`run` for cost-routed runs. Bedrock
     constructs with zero new deps (boto3 vendored).
-    **(B) Per-channel memory isolation** — `LOOP_MEMORY_SCOPE` (channel default /
-    team / global; per-app `LOOP_MEMORY_SCOPE_<NAME>`). Recall-time filter via new
+    **(B) Per-channel memory isolation** — `CAIRN_MEMORY_SCOPE` (channel default /
+    team / global; per-app `CAIRN_MEMORY_SCOPE_<NAME>`). Recall-time filter via new
     `reqctx.memory_scope()`, applied in `storage.py` (FTS+LIKE) and `vector_store.py`
     (lexical leg in SQL, **semantic leg post-filtered** since `vector_top_k` can't
     take a WHERE); dedup scoped to match. No migration (channel/team already stamped).
     Verified live on both backends incl. semantic isolation; +2 regression tests
     (`test_channel_scope_*`), suite 9/9.
-    **(C) Ambient PM mode** — new `loop/ambient.py`, off unless `LOOP_AMBIENT=on`;
+    **(C) Ambient PM mode** — new `loop/ambient.py`, off unless `CAIRN_AMBIENT=on`;
     `maybe_start()` spawns a daemon per app from `slack_app.start()`. **Two discovery
-    modes** via `LOOP_AMBIENT_DISCOVERY`: `interactions` (narrow default = threads we
+    modes** via `CAIRN_AMBIENT_DISCOVERY`: `interactions` (narrow default = threads we
     touched, from the telemetry DB) and `channels` (**full-channel scan** via
     `conversations_history`, needs `channels:read`+`channels:history`). Live staleness
     re-check via `conversations_replies`, re-nudge guard, posts via the **per-app** Web
@@ -282,7 +282,7 @@ prompt edit could silently regress quality and we'd never know.
     (5). **Verified LIVE 2026-07-01:** Rasputin_Loop, full-channel scan over
     #new-channel, posted two well-formed PM nudges in-thread on stalled questions
     (`rasputin:ambient` rows recorded, MiniMax-M3, no guardrail hits).
-    **(D) Sandbox via MCP** — documented only: point `LOOP_MCP_SERVERS` at a
+    **(D) Sandbox via MCP** — documented only: point `CAIRN_MCP_SERVERS` at a
     code-exec MCP server (zero core code; per-request rebuild). Single-server MCP
     limitation noted. **Evals:** `loop-eval` 25/28 live on MiniMax-M3; +3
     `memory-scope` golden cases (channel isolation through the real agent, all pass);
@@ -293,7 +293,7 @@ prompt edit could silently regress quality and we'd never know.
 - **2026-06-24 (v0.4.0)** — **Hybrid RAG memory + Slack AI Assistant merged to
   `main`, verified live.** With the MiniMax key (in `ANTHROPIC_AUTH_TOKEN`) and
   `assistant:write` granted on Rasputin_Loop, both branches were tested and
-  merged. (1) **Hybrid memory** (`LOOP_MEMORY_BACKEND=hybrid`): libSQL/Turso FTS5
+  merged. (1) **Hybrid memory** (`CAIRN_MEMORY_BACKEND=hybrid`): libSQL/Turso FTS5
   + native vector search (`F32_BLOB`/`vector_top_k`) fused via **RRF**; embeddings
   pluggable, default `fastembed` (local, **no key**; confirmed MiniMax `embo-01`
   needs only the key — **no Group ID** on api.minimax.io). Verified end-to-end: a
@@ -301,13 +301,13 @@ prompt edit could silently regress quality and we'd never know.
   "playbook in Notion under SRE") **with provenance citation**, and `loop-eval`
   memory cases pass on the hybrid backend. (2) **Exact-content dedup** on write +
   prompt nudge to not re-save on recall (model can still re-phrase → near-dup is a
-  known follow-up). (3) **Slack AI Assistant** (`LOOP_SLACK_ASSISTANT=on`):
+  known follow-up). (3) **Slack AI Assistant** (`CAIRN_SLACK_ASSISTANT=on`):
   suggested prompts + "is thinking…" status, routed to the same agent; both apps
   connected live and attached the assistant cleanly. `.env` set to
   `hybrid`+`fastembed`+assistant-on; `pip install -e ".[vector]"`. Bumped to
   v0.4.0. Added **7 memory evals** (provenance recall, semantic recall across
   wording, selective save vs skip-chit-chat); `loop-eval` now isolates memory to a
-  throwaway DB per run via `LOOP_MEMORY_DB_PATH`/`LOOP_VECTOR_DB_PATH` (eval_results
+  throwaway DB per run via `CAIRN_MEMORY_DB_PATH`/`CAIRN_VECTOR_DB_PATH` (eval_results
   still persist) — new cases 7/7 green live. Note: MiniMax M3 sometimes re-saves a
   re-phrased fact on a recall turn (exact dups deduped; not asserted in CI).
   **Open:** human round-trip in the Rasputin_Loop assistant *pane* (needs the
@@ -329,13 +329,13 @@ prompt edit could silently regress quality and we'd never know.
   branches (not merged):** `feat/vector-memory-turso` (libSQL/Turso native vector
   search + pluggable embeddings — fastembed default = no key) and
   `feat/slack-assistant` (native Slack "Assistant" AI surface). Hackathon: Loop
-  qualifies today via **MCP server integration** (`LOOP_MCP_SERVERS`); the
+  qualifies today via **MCP server integration** (`CAIRN_MCP_SERVERS`); the
   Assistant branch adds a clean **Slack AI capabilities** claim.
 - **2026-06-24 (pm)** — **Multi-app support.** `slack_app._discover_apps()` +
   `start()` now run N Slack apps in one process (each its own Bolt App + Socket
   Mode thread), via `SLACK_BOT_TOKEN_<NAME>`/`SLACK_APP_TOKEN_<NAME>` pairs (bare
   `SLACK_BOT_TOKEN`/`SLACK_APP_TOKEN` still works). One agent per app
-  (`get_agent(app_name)`), each with optional `LOOP_PERSONA_<NAME>` system-prompt
+  (`get_agent(app_name)`), each with optional `CAIRN_PERSONA_<NAME>` system-prompt
   override — the seam for giving Loop vs Rasputin_Loop different jobs. Telemetry
   `entrypoint` is now `<app>:<kind>`. Diagnosed the "@Rasputin_Loop silent" issue:
   tokens were correct but **stale `loop` processes** (one on Loop's old env) were
@@ -345,7 +345,7 @@ prompt edit could silently regress quality and we'd never know.
 - **2026-06-24** — Shipped **v0.3.1: file attachments / multimodal input**.
   `slack_app._collect_files()` downloads Slack attachments via
   `url_private_download` + bot token (needs **`files:read`** scope); allows
-  `image/*`, `text/*`, `application/json`, size-capped by `LOOP_MAX_FILE_BYTES`.
+  `image/*`, `text/*`, `application/json`, size-capped by `CAIRN_MAX_FILE_BYTES`.
   `agent.run(prompt, attachments=…)` → `_build_message()` builds a Strands
   multimodal content list — images go to **MiniMax M3 natively**, text/code/json
   inlined. DM `file_share` uploads now answered (subtype no longer dropped).

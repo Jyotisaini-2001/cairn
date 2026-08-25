@@ -2,14 +2,14 @@
 
 > **Branch:** `feat/slack-assistant`. Off `main` because it can't be verified
 > without the Slack-side "Agents & AI Apps" toggle on a real workspace. The code
-> is gated behind `LOOP_SLACK_ASSISTANT=on` and never affects the default
+> is gated behind `CAIRN_SLACK_ASSISTANT=on` and never affects the default
 > mention/DM/slash flow.
 
 ## Why this exists (hackathon)
 
 The hackathon requires using at least one of: **Slack AI capabilities**, **MCP
 server integration**, or **Real-Time Search API**. Loop already has **MCP server
-integration** (`LOOP_MCP_SERVERS`), so it qualifies today. This branch adds a
+integration** (`CAIRN_MCP_SERVERS`), so it qualifies today. This branch adds a
 clean, first-class **Slack AI capabilities** claim: it serves Slack's native
 **Assistant** container (the AI side panel / app DM) — `assistant_thread_started`
 greeting, **suggested prompts**, and a live **"is thinking…" status** — routed to
@@ -18,7 +18,7 @@ the same single Strands agent (same memory, guardrails, observability).
 ## What it does
 
 `loop/slack_app.py` gains `_attach_assistant()`, wired via Bolt's `Assistant`
-class when `LOOP_SLACK_ASSISTANT=on`:
+class when `CAIRN_SLACK_ASSISTANT=on`:
 
 - **thread_started** → greets the user and sets suggested prompts (recall a
   decision / summarize a channel / remember something).
@@ -39,7 +39,7 @@ On the Slack app (per app) at <https://api.slack.com/apps>:
 
 Then:
 ```dotenv
-LOOP_SLACK_ASSISTANT=on
+CAIRN_SLACK_ASSISTANT=on
 ```
 ```bash
 loop

@@ -8,11 +8,11 @@ the agent keeps control and replies gracefully instead of crashing.
 
 Enforcing, with per-rule env toggles (a rule is OFF when its value is 0/empty):
 
-  LOOP_GUARDRAILS=on               master switch (default on)
-  LOOP_MAX_TOOL_CALLS=12           cap tool calls per request   (0 = off)
-  LOOP_MAX_TOOL_REPEAT=2           cap identical name+input calls (0 = off)
-  LOOP_MAX_TOKENS_PER_REQUEST=20000  token circuit breaker      (0 = off)
-  LOOP_BLOCKED_SLACK_METHODS=chat.delete,conversations.archive,conversations.kick,admin.*
+  CAIRN_GUARDRAILS=on               master switch (default on)
+  CAIRN_MAX_TOOL_CALLS=12           cap tool calls per request   (0 = off)
+  CAIRN_MAX_TOOL_REPEAT=2           cap identical name+input calls (0 = off)
+  CAIRN_MAX_TOKENS_PER_REQUEST=20000  token circuit breaker      (0 = off)
+  CAIRN_BLOCKED_SLACK_METHODS=chat.delete,conversations.archive,conversations.kick,admin.*
 
 Method matching is dot/underscore-insensitive (`chat.delete` == `chat_delete`),
 with a trailing ``*`` wildcard for prefix bans like ``admin.*``.
@@ -35,7 +35,7 @@ _DEFAULT_BLOCKED = "chat.delete,conversations.archive,conversations.kick,admin.*
 
 
 def _enabled() -> bool:
-    return os.environ.get("LOOP_GUARDRAILS", "on").strip().lower() not in {"off", "0", "false", "no"}
+    return os.environ.get("CAIRN_GUARDRAILS", "on").strip().lower() not in {"off", "0", "false", "no"}
 
 
 def _int_env(name: str, default: int) -> int:
@@ -49,7 +49,7 @@ def _int_env(name: str, default: int) -> int:
 
 
 def _blocked_methods() -> list[str]:
-    raw = os.environ.get("LOOP_BLOCKED_SLACK_METHODS", _DEFAULT_BLOCKED)
+    raw = os.environ.get("CAIRN_BLOCKED_SLACK_METHODS", _DEFAULT_BLOCKED)
     return [_norm(m) for m in raw.split(",") if m.strip()]
 
 
@@ -108,19 +108,19 @@ class Guardrails(HookProvider):
                 return "blocked_method", f"Slack method '{action}' is blocked by policy."
 
         # 2) repeated identical call (name + input)
-        max_repeat = _int_env("LOOP_MAX_TOOL_REPEAT", 2)
+        max_repeat = _int_env("CAIRN_MAX_TOOL_REPEAT", 2)
         if max_repeat > 0:
             count = st.tool_hashes.get(tool_signature(name, tool_input), 0)
             if count > max_repeat:
                 return "repeat", f"Repeated identical '{name}' call ({count}× > {max_repeat}) blocked."
 
         # 3) too many tool calls this request (runaway loop)
-        max_calls = _int_env("LOOP_MAX_TOOL_CALLS", 12)
+        max_calls = _int_env("CAIRN_MAX_TOOL_CALLS", 12)
         if max_calls > 0 and len(st.tool_calls) > max_calls:
             return "max_calls", f"Tool-call limit reached ({len(st.tool_calls)} > {max_calls}); wrap up and answer."
 
         # 4) token circuit breaker
-        max_tokens = _int_env("LOOP_MAX_TOKENS_PER_REQUEST", 20000)
+        max_tokens = _int_env("CAIRN_MAX_TOKENS_PER_REQUEST", 20000)
         if max_tokens > 0 and st.tokens > max_tokens:
             return "token_budget", f"Token budget exceeded ({st.tokens} > {max_tokens}); answer with what you have."
 

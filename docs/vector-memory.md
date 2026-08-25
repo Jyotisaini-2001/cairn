@@ -1,6 +1,6 @@
 # Hybrid memory — libSQL / Turso (lexical + semantic, Agentic RAG)
 
-> Backend behind `LOOP_MEMORY_BACKEND=hybrid`. The default backend stays the
+> Backend behind `CAIRN_MEMORY_BACKEND=hybrid`. The default backend stays the
 > zero-dep FTS5 + provenance store; turn this on for hybrid retrieval. Verified
 > end-to-end (unit tests + a live MiniMax M3 agent turn) before merge to `main`.
 
@@ -34,7 +34,7 @@ transaction), and it can later sync to Turso cloud with no code change.
 **not generate** them, so the semantic half needs an embedding model. It's
 pluggable (`loop/embeddings.py`) and defaults to a local one:
 
-| `LOOP_EMBEDDINGS` | Key? | Notes |
+| `CAIRN_EMBEDDINGS` | Key? | Notes |
 |---|---|---|
 | `fastembed` (default) | **No** | Local ONNX, `BAAI/bge-small-en-v1.5` (384-dim). Downloads the model once (~90 MB). No rate limit. |
 | `minimax` | Key only | `embo-01`. **No Group ID needed** on `api.minimax.io` — the `ANTHROPIC_AUTH_TOKEN`/`MINIMAX_API_KEY` alone works. Shares your account's RPM with the chat model. |
@@ -51,9 +51,9 @@ key, no rate limit (recommended for the demo).
 pip install -e ".[vector]"         # libsql-experimental + fastembed
 ```
 ```dotenv
-LOOP_MEMORY_BACKEND=hybrid         # aliases: libsql / turso / vector
-LOOP_EMBEDDINGS=fastembed          # local, no API key
-LOOP_VECTOR_DB_PATH=./data/loop_vec.db
+CAIRN_MEMORY_BACKEND=hybrid         # aliases: libsql / turso / vector
+CAIRN_EMBEDDINGS=fastembed          # local, no API key
+CAIRN_VECTOR_DB_PATH=./data/loop_vec.db
 # Optional — sync the embedded file to Turso cloud:
 # TURSO_DATABASE_URL=libsql://<db>.turso.io
 # TURSO_AUTH_TOKEN=...

@@ -86,8 +86,8 @@ def memory_scope() -> tuple[str, str] | None:
 
     This is what makes channel-isolated memory possible (Claude-Tag-style): a fact
     saved in #support is not recalled in #data-team. Resolution order:
-    ``LOOP_MEMORY_SCOPE_<SOURCE>`` (per-app override, SOURCE = the Loop app name)
-    → ``LOOP_MEMORY_SCOPE`` → default ``channel``. Values:
+    ``CAIRN_MEMORY_SCOPE_<SOURCE>`` (per-app override, SOURCE = the Loop app name)
+    → ``CAIRN_MEMORY_SCOPE`` → default ``channel``. Values:
 
     * ``channel`` (default) — scope to the originating channel.
     * ``team``              — scope to the workspace/team.
@@ -102,8 +102,8 @@ def memory_scope() -> tuple[str, str] | None:
         return None
     source = (state.source or "").upper()
     scope = (
-        os.environ.get(f"LOOP_MEMORY_SCOPE_{source}")
-        or os.environ.get("LOOP_MEMORY_SCOPE")
+        os.environ.get(f"CAIRN_MEMORY_SCOPE_{source}")
+        or os.environ.get("CAIRN_MEMORY_SCOPE")
         or "channel"
     ).strip().lower()
     if scope == "global":

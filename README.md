@@ -14,8 +14,8 @@ There is **one brain** — the agent. No intent parser, no command router, no ex
 |---|---|
 | 🤖 **Strands agent** | One agent loop decides what to do; replies in Slack `mrkdwn`. |
 | 🧠 **Episodic memory** | Crucial facts/decisions/episodes persisted in SQLite, each **stamped with who/where/when**; auto-injected (with provenance) before each reply. The agent is the filter — it saves signal, skips chit-chat, and de-dupes. |
-| 🔎 **Hybrid RAG recall** | Optional libSQL/**Turso** backend fusing **FTS5 (lexical) + semantic vectors** via Reciprocal Rank Fusion. Local embeddings (`fastembed`) — **no API key**. `LOOP_MEMORY_BACKEND=hybrid`. |
-| ✨ **Slack AI Assistant** | Native Slack AI app pane — suggested prompts + live "is thinking…" status, routed to the same agent. `LOOP_SLACK_ASSISTANT=on`. |
+| 🔎 **Hybrid RAG recall** | Optional libSQL/**Turso** backend fusing **FTS5 (lexical) + semantic vectors** via Reciprocal Rank Fusion. Local embeddings (`fastembed`) — **no API key**. `CAIRN_MEMORY_BACKEND=hybrid`. |
+| ✨ **Slack AI Assistant** | Native Slack AI app pane — suggested prompts + live "is thinking…" status, routed to the same agent. `CAIRN_SLACK_ASSISTANT=on`. |
 | 👥 **Multi-app support** | Run **Loop _and_ Rasputin_Loop** (and more) in one process — each its own bot, its own agent, its own persona. |
 | 📎 **File & image reading** | Images go to the model natively (M3 is multimodal); text/code/JSON inlined; PDFs extracted (`pypdf`). |
 | 🎫 **Jira auto-triage** | Detects bug reports in Slack → extracts title/priority/assignee → confirms with user → creates Jira ticket. Smart assignee routing: `<@mention>` → Slack email → Jira account ID, fully automatic. |
@@ -157,7 +157,7 @@ erDiagram
     }
 ```
 
-`loop_vec.db` (libSQL — the hybrid backend, `LOOP_MEMORY_BACKEND=hybrid`): the same
+`loop_vec.db` (libSQL — the hybrid backend, `CAIRN_MEMORY_BACKEND=hybrid`): the same
 `memory_entries` shape **plus** an `embedding F32_BLOB(384)` column with a native
 vector index, and its own FTS5 mirror; lexical + semantic results are fused via
 Reciprocal Rank Fusion at query time.
@@ -171,11 +171,11 @@ Loop can run **one or many** Slack apps in a single process. Each configured app
 - **One app (back-compat):** set the bare `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (label it with `SLACK_APP_NAME`, default `loop`).
 - **Many apps:** add a `SLACK_BOT_TOKEN_<NAME>` + `SLACK_APP_TOKEN_<NAME>` pair per app.
 
-Give each app a different job with **`LOOP_PERSONA_<NAME>`**, which is appended to that app's system prompt:
+Give each app a different job with **`CAIRN_PERSONA_<NAME>`**, which is appended to that app's system prompt:
 
 ```bash
-LOOP_PERSONA_LOOP=You are the team's general assistant.
-LOOP_PERSONA_RASPUTIN=You are the on-call incident assistant; be terse and precise.
+CAIRN_PERSONA_LOOP=You are the team's general assistant.
+CAIRN_PERSONA_RASPUTIN=You are the on-call incident assistant; be terse and precise.
 ```
 
 Telemetry tags every interaction `"<app>:<entrypoint>"` (e.g. `rasputin:app_mention`) so the apps stay distinguishable.
@@ -191,7 +191,7 @@ Telemetry tags every interaction `"<app>:<entrypoint>"` (e.g. `rasputin:app_ment
 | `search_memory` / `add_memory` | Strands `MemoryManager` | Long-term memory recall (auto-injected) and writes. |
 | `calculator` | `strands_tools.calculator` | Math. |
 | `think` | `strands_tools.think` | Structured reasoning for hard problems. |
-| *(MCP tools)* | `LOOP_MCP_SERVERS` | Any stdio MCP server's tools, loaded at runtime. |
+| *(MCP tools)* | `CAIRN_MCP_SERVERS` | Any stdio MCP server's tools, loaded at runtime. |
 
 **Required Slack bot scopes:** `app_mentions:read`, `chat:write`, `commands`, `reactions:write`, `files:read`, `channels:history`, `groups:history`, `im:history`, `users:read`, `users:read.email` (assignee-by-name → email resolution). For the native **AI Assistant** pane add `assistant:write` + enable the "Agents & AI Apps" feature (see [`docs/slack-assistant.md`](docs/slack-assistant.md)); for ambient full-channel discovery without an allow-list add `channels:read`.
 
@@ -286,7 +286,7 @@ Local **SQLite** at `DATABASE_PATH` (default `./data/loop.db`), no external serv
 
 Memory is **episodic and provenance-stamped**: the `add_memory` tool only carries content, so the store auto-attaches *who said it, in which channel/workspace, via which app, and when* (from the request) — recall can then say "_per @alice in #infra on 2026-06-20_". Default search is **FTS5** (`bm25()` + recency) with a sanitized, injection-safe query and a `LIKE` fallback; exact-duplicate content is de-duped on write. Run the storage tests with `python -m tests.test_memory` (no pytest/key needed).
 
-**Hybrid RAG (optional):** set `LOOP_MEMORY_BACKEND=hybrid` (after `pip install -e ".[vector]"`) to recall over **libSQL/Turso**, fusing FTS5 (lexical) with semantic vector search (`F32_BLOB`/`vector_top_k`) via Reciprocal Rank Fusion — so *"where's the outage runbook?"* finds *"the playbook lives in Notion under SRE"* even with no shared words. Embeddings default to local **`fastembed`** (no API key). See [`docs/vector-memory.md`](docs/vector-memory.md). For the native **Slack AI Assistant** pane, see [`docs/slack-assistant.md`](docs/slack-assistant.md).
+**Hybrid RAG (optional):** set `CAIRN_MEMORY_BACKEND=hybrid` (after `pip install -e ".[vector]"`) to recall over **libSQL/Turso**, fusing FTS5 (lexical) with semantic vector search (`F32_BLOB`/`vector_top_k`) via Reciprocal Rank Fusion — so *"where's the outage runbook?"* finds *"the playbook lives in Notion under SRE"* even with no shared words. Embeddings default to local **`fastembed`** (no API key). See [`docs/vector-memory.md`](docs/vector-memory.md). For the native **Slack AI Assistant** pane, see [`docs/slack-assistant.md`](docs/slack-assistant.md).
 
 ---
 
@@ -335,7 +335,7 @@ JIRA_API_TOKEN=your-api-token        # https://id.atlassian.com/manage-profile/s
 TOOLSETS=jira_issues                 # limits MCP to 8 tools (keeps context small)
 ```
 
-The project key (`KAN` by default) is set in `LOOP_PERSONA_*` in `.env`. This feature does **not** go through the agent for bug detection or ticket creation — it runs as a deterministic shortcut in `slack_app.py` so it works reliably regardless of model behavior.
+The project key (`KAN` by default) is set in `CAIRN_PERSONA_*` in `.env`. This feature does **not** go through the agent for bug detection or ticket creation — it runs as a deterministic shortcut in `slack_app.py` so it works reliably regardless of model behavior.
 
 ---
 
@@ -343,13 +343,13 @@ The project key (`KAN` by default) is set in `LOOP_PERSONA_*` in `.env`. This fe
 
 ```bash
 # Single server
-LOOP_MCP_SERVERS="uvx mcp-server-fetch" loop
+CAIRN_MCP_SERVERS="uvx mcp-server-fetch" loop
 
 # Multiple servers — semicolon-separated, all loaded on every agent call
-LOOP_MCP_SERVERS="uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio" loop
+CAIRN_MCP_SERVERS="uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio" loop
 
 # Per-app: only Rasputin gets Google Drive tools, Loop gets fetch
-LOOP_MCP_SERVERS="uvx mcp-server-fetch"
-LOOP_MCP_SERVERS_RASPUTIN="uvx mcp-google-drive"
+CAIRN_MCP_SERVERS="uvx mcp-server-fetch"
+CAIRN_MCP_SERVERS_RASPUTIN="uvx mcp-google-drive"
 ```
 The agent enters all MCP contexts per invocation via `contextlib.ExitStack`, merges every server's tools alongside built-ins, and exits cleanly — no code changes needed to add a server. Env vars are forwarded to each subprocess so credentials work.

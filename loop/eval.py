@@ -72,7 +72,7 @@ def _score(run, expect: dict) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(prog="loop-eval", description="Run Loop's golden eval set.")
-    parser.add_argument("--dataset", default=os.environ.get("LOOP_EVAL_DATASET", str(DATASET)))
+    parser.add_argument("--dataset", default=os.environ.get("CAIRN_EVAL_DATASET", str(DATASET)))
     parser.add_argument("--limit", type=int, default=None, help="run only the first N cases")
     parser.add_argument("--case", nargs="+", default=None, help="run only these case ids")
     parser.add_argument("--json", action="store_true", help="emit a JSON summary")
@@ -101,8 +101,8 @@ def main(argv: list[str] | None = None) -> int:
         import tempfile
 
         mem_dir = tempfile.mkdtemp(prefix="loop-eval-mem-")
-        os.environ["LOOP_MEMORY_DB_PATH"] = os.path.join(mem_dir, "memory.db")
-        os.environ["LOOP_VECTOR_DB_PATH"] = os.path.join(mem_dir, "memory_vec.db")
+        os.environ["CAIRN_MEMORY_DB_PATH"] = os.path.join(mem_dir, "memory.db")
+        os.environ["CAIRN_VECTOR_DB_PATH"] = os.path.join(mem_dir, "memory_vec.db")
 
     # Import after load_dotenv (+ memory env) so the model/store env is in place.
     from loop import observability as obs

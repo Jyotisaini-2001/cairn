@@ -10,7 +10,7 @@ Each step is:
     full reasoning + tool I/O at DEBUG / ``LOG_LEVEL=DEBUG``), and
   - persisted via ``observability.record_step`` to the ``steps`` table.
 
-Set ``LOOP_TRACE=off`` to silence the log lines (rows are still written).
+Set ``CAIRN_TRACE=off`` to silence the log lines (rows are still written).
 
 The tracer also OWNS the per-request counters in `RequestState` (model_calls,
 tool_calls, tool_hashes, tokens, reasoning). The guardrails read those counters
@@ -43,7 +43,7 @@ _DETAIL_MAX = 800
 
 
 def _trace_enabled() -> bool:
-    return os.environ.get("LOOP_TRACE", "on").strip().lower() not in {"off", "0", "false", "no"}
+    return os.environ.get("CAIRN_TRACE", "on").strip().lower() not in {"off", "0", "false", "no"}
 
 
 def tool_signature(name: str, tool_input: Any) -> str:

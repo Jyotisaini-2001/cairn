@@ -1,10 +1,10 @@
 """Ambient (background) mode — the proactive project-manager teammate.
 
-Off by default (`LOOP_AMBIENT=off`). When on, each Slack app gets a daemon thread
+Off by default (`CAIRN_AMBIENT=off`). When on, each Slack app gets a daemon thread
 that periodically looks for threads which have **gone quiet without resolution**
 and, if a nudge is warranted, posts a concise follow-up — like a PM keeping work
 moving. This is Loop's take on Claude Tag's "ambient mode", but provider-agnostic
-and able to run its background scanning on a cheaper model (`LOOP_AMBIENT_MODEL`).
+and able to run its background scanning on a cheaper model (`CAIRN_AMBIENT_MODEL`).
 
 Design (deliberately minimal — no new brain, no intent parser):
   • **Discovery is pluggable and starts narrow.** The default finds candidate
@@ -16,7 +16,7 @@ Design (deliberately minimal — no new brain, no intent parser):
     (`conversations_replies`) and only proceed if its newest message really is
     older than the stale window.
   • **Re-nudge guard.** We never nudge the same thread twice inside
-    `LOOP_AMBIENT_RENUDGE_HOURS` (checked against our own `:ambient` interactions).
+    `CAIRN_AMBIENT_RENUDGE_HOURS` (checked against our own `:ambient` interactions).
   • **Right identity.** We post through the per-app Bolt/Web client
     (`cfg.bot_token`), not the `slack_send_message` tool (which always uses the
     bare `SLACK_BOT_TOKEN`).
@@ -55,7 +55,7 @@ def _safe_connect(path: str) -> sqlite3.Connection:
 
 # A discovery function: given an app name + a Slack Web client, return candidate
 # (channel, thread_ts, team) tuples to consider nudging. Two implementations ship
-# (interactions / full-channel scan); selected by LOOP_AMBIENT_DISCOVERY.
+# (interactions / full-channel scan); selected by CAIRN_AMBIENT_DISCOVERY.
 Discoverer = Callable[[str, Any], "list[tuple[str, str, str | None]]"]
 
 
@@ -71,11 +71,11 @@ def _int_env(name: str, default: int) -> int:
 
 
 def enabled() -> bool:
-    return _on(os.environ.get("LOOP_AMBIENT", "off"))
+    return _on(os.environ.get("CAIRN_AMBIENT", "off"))
 
 
 def _channels_allowlist() -> set[str]:
-    raw = os.environ.get("LOOP_AMBIENT_CHANNELS", "") or ""
+    raw = os.environ.get("CAIRN_AMBIENT_CHANNELS", "") or ""
     return {c.strip() for c in raw.split(",") if c.strip()}
 
 
@@ -84,8 +84,8 @@ def discover_from_interactions(app_name: str, client: Any = None) -> list[tuple[
     """Candidate stale threads from the telemetry DB: threads `app_name` handled
     whose last *genuine* (non-ambient) interaction is older than the stale window.
     `client` is unused here (kept for the Discoverer signature)."""
-    stale_hours = _int_env("LOOP_AMBIENT_STALE_HOURS", 24)
-    max_threads = _int_env("LOOP_AMBIENT_MAX_THREADS", 3)
+    stale_hours = _int_env("CAIRN_AMBIENT_STALE_HOURS", 24)
+    max_threads = _int_env("CAIRN_AMBIENT_MAX_THREADS", 3)
     cutoff = int(time.time()) - stale_hours * 3600
     path = os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
     allow = _channels_allowlist()
@@ -129,7 +129,7 @@ def _team_id(client: Any) -> str | None:
 
 def _bot_channels(client: Any) -> list[str]:
     """Channels the bot is a member of (paginated). Needs channels:read /
-    groups:read. Prefer LOOP_AMBIENT_CHANNELS to avoid this call when you can."""
+    groups:read. Prefer CAIRN_AMBIENT_CHANNELS to avoid this call when you can."""
     out: list[str] = []
     cursor: str | None = None
     try:
@@ -152,9 +152,9 @@ def discover_from_channels(app_name: str, client: Any) -> list[tuple[str, str, s
     then re-checks true staleness against the whole thread and the re-nudge guard, so
     active threads (recent replies) are dropped. Needs channels:history (+
     groups:history for private channels) and, without an allow-list, channels:read."""
-    stale_hours = _int_env("LOOP_AMBIENT_STALE_HOURS", 24)
-    max_threads = _int_env("LOOP_AMBIENT_MAX_THREADS", 3)
-    hist_limit = _int_env("LOOP_AMBIENT_HISTORY_LIMIT", 50)
+    stale_hours = _int_env("CAIRN_AMBIENT_STALE_HOURS", 24)
+    max_threads = _int_env("CAIRN_AMBIENT_MAX_THREADS", 3)
+    hist_limit = _int_env("CAIRN_AMBIENT_HISTORY_LIMIT", 50)
     cutoff = time.time() - stale_hours * 3600
     allow = _channels_allowlist()
     channels = list(allow) if allow else _bot_channels(client)
@@ -187,7 +187,7 @@ def discover_from_channels(app_name: str, client: Any) -> list[tuple[str, str, s
 
 
 def _select_discoverer() -> Discoverer:
-    mode = (os.environ.get("LOOP_AMBIENT_DISCOVERY", "interactions") or "interactions").strip().lower()
+    mode = (os.environ.get("CAIRN_AMBIENT_DISCOVERY", "interactions") or "interactions").strip().lower()
     if mode in {"channels", "channel", "full", "scan", "channel-scan"}:
         return discover_from_channels
     return discover_from_interactions
@@ -195,7 +195,7 @@ def _select_discoverer() -> Discoverer:
 
 # ── per-thread processing ─────────────────────────────────────────────────────
 def _recently_nudged(app_name: str, channel: str, thread_ts: str) -> bool:
-    window_h = _int_env("LOOP_AMBIENT_RENUDGE_HOURS", 48)
+    window_h = _int_env("CAIRN_AMBIENT_RENUDGE_HOURS", 48)
     since = int(time.time()) - window_h * 3600
     path = os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
     try:
@@ -214,7 +214,7 @@ def _recently_nudged(app_name: str, channel: str, thread_ts: str) -> bool:
 
 
 def _fetch_thread(client: WebClient, channel: str, thread_ts: str) -> list[dict]:
-    limit = _int_env("LOOP_AMBIENT_REPLIES_LIMIT", 20)
+    limit = _int_env("CAIRN_AMBIENT_REPLIES_LIMIT", 20)
     try:
         resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=limit)
         return list(resp.get("messages") or [])
@@ -227,7 +227,7 @@ def _is_stale(messages: list[dict]) -> bool:
     """True if the newest message in the thread is older than the stale window."""
     if not messages:
         return False
-    stale_seconds = _int_env("LOOP_AMBIENT_STALE_HOURS", 24) * 3600
+    stale_seconds = _int_env("CAIRN_AMBIENT_STALE_HOURS", 24) * 3600
     try:
         newest = max(float(m.get("ts", 0) or 0) for m in messages)
     except ValueError:
@@ -268,7 +268,7 @@ def _process_thread(cfg_name: str, client: WebClient, channel: str, thread_ts: s
     if not transcript:
         return
 
-    hours = _int_env("LOOP_AMBIENT_STALE_HOURS", 24)
+    hours = _int_env("CAIRN_AMBIENT_STALE_HOURS", 24)
     prompt = _PROMPT.format(channel=channel, hours=hours, transcript=transcript)
     ix = obs.Interaction(
         entrypoint=f"{cfg_name}:ambient",
@@ -278,7 +278,7 @@ def _process_thread(cfg_name: str, client: WebClient, channel: str, thread_ts: s
         thread_ts=thread_ts,
         prompt="(ambient scan)",
     )
-    ambient_model = os.environ.get("LOOP_AMBIENT_MODEL") or None
+    ambient_model = os.environ.get("CAIRN_AMBIENT_MODEL") or None
     try:
         with obs.record(ix):
             run = run_agent(
@@ -303,7 +303,7 @@ def _nudge_action_items(cfg_name: str, client: WebClient) -> None:
     """Post deadline nudges for due/overdue action items tracked by this app."""
     from loop.action_items import get_due_items, mark_nudged
 
-    nudge_hours = _int_env("LOOP_ACTION_ITEM_NUDGE_HOURS", 24)
+    nudge_hours = _int_env("CAIRN_ACTION_ITEM_NUDGE_HOURS", 24)
     items = get_due_items(nudge_hours=nudge_hours)
     for item in items:
         if item["app"] != cfg_name:
@@ -332,7 +332,7 @@ def _tick(cfg_name: str, client: WebClient, discover: Discoverer) -> None:
 
 def _loop(cfg_name: str, bot_token: str, discover: Discoverer) -> None:  # pragma: no cover (daemon)
     client = WebClient(token=bot_token)
-    interval = _int_env("LOOP_AMBIENT_INTERVAL_SEC", 900)
+    interval = _int_env("CAIRN_AMBIENT_INTERVAL_SEC", 900)
     log.info("[%s] ambient loop started (interval=%ds)", cfg_name, interval)
     # Stagger the first scan so startup isn't noisy.
     time.sleep(min(interval, 60))
@@ -345,9 +345,9 @@ def _loop(cfg_name: str, bot_token: str, discover: Discoverer) -> None:  # pragm
 
 
 def maybe_start(configs: list[Any], discover: Discoverer | None = None) -> None:
-    """Spawn one daemon ambient loop per app, if LOOP_AMBIENT is on. `configs` is
+    """Spawn one daemon ambient loop per app, if CAIRN_AMBIENT is on. `configs` is
     a list of AppConfig (name + bot_token). The discoverer is chosen by
-    LOOP_AMBIENT_DISCOVERY (interactions default | channels) unless one is passed.
+    CAIRN_AMBIENT_DISCOVERY (interactions default | channels) unless one is passed.
     No-op when disabled."""
     if not enabled():
         return

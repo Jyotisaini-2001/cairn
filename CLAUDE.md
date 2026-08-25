@@ -4,6 +4,9 @@ This file is auto-loaded each Claude Code session. It is the **entry point** for
 cross-session continuity. Read the linked docs before doing substantive work.
 
 ## Read first (cross-session memory)
+0. **`DIRECTION.md`** — the single committed direction (organizational memory:
+   "decisions are made in Slack and lost in Slack"). Read it first; it is the
+   tie-breaker when a change could pull the project sideways.
 1. **`architecture.md`** — how Loop is wired (runtime flow, components, the
    SQLite memory store, the model-provider env contract).
 2. **`progress.md`** — current status, the MiniMax M3 migration checklist, and
@@ -33,7 +36,7 @@ two Slack entrypoints (`@mention`, `/loop`). Tools: `slack`, `slack_send_message
   app-level token (xapp). **Multi-app:** one process runs N apps via
   `SLACK_BOT_TOKEN_<NAME>`/`SLACK_APP_TOKEN_<NAME>` pairs (bare
   `SLACK_BOT_TOKEN`/`SLACK_APP_TOKEN` still works as one app). Per-app behavior via
-  `LOOP_PERSONA_<NAME>`. The running app's identity is decided by which tokens are
+  `CAIRN_PERSONA_<NAME>`. The running app's identity is decided by which tokens are
   loaded — verify with `auth.test`. The workspace has two apps: `Loop`
   (`A0BC0NPB9LN`) and `Rasputin_Loop` (`A0BCVHES936`); the user wants BOTH to run.
 - A Socket Mode app needs **Event Subscriptions** (`app_mention`, `message.im`)

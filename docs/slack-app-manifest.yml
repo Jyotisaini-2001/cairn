@@ -1,0 +1,58 @@
+# Slack app manifest for Cairn.
+#
+#   https://api.slack.com/apps -> Create New App -> From a manifest
+#   -> pick workspace -> YAML tab -> paste this -> Next -> Create
+#   -> Install to Workspace   (gives the xoxb- bot token)
+#   -> Basic Information -> App-Level Tokens -> Generate, scope connections:write
+#                                              (gives the xapp- app token)
+#
+# Then in .env:
+#   SLACK_BOT_TOKEN_CAIRN=xoxb-...
+#   SLACK_APP_TOKEN_CAIRN=xapp-...
+#
+# Deliberately minimal — Slack rejects a manifest with a short `long_description`
+# (needs 460+ chars) and errors on `assistant_view` unless the workspace has the
+# "Agents & AI Apps" feature. Both are optional; add them in the UI later.
+display_information:
+  name: Cairn
+  description: Your team's decisions, answerable - with a source.
+  background_color: "#2c3e50"
+
+features:
+  bot_user:
+    display_name: Cairn
+    always_online: true
+  slash_commands:
+    - command: /cairn
+      description: Ask Cairn a question
+      usage_hint: why did we pick Postgres?
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - commands               # the /cairn slash command (REQUIRED by slash_commands)
+      - app_mentions:read      # @Cairn in a channel
+      - chat:write             # reply
+      - im:history             # read DMs
+      - im:read
+      - im:write               # open a DM
+      - channels:history       # READ CHANNEL CONVERSATIONS  <- the direction
+      - channels:read          # channel names / metadata
+      - groups:history         # same, for private channels it is invited to
+      - groups:read
+      - users:read             # resolve @mentions to names
+      - users:read.email       # name -> email (Jira assignee resolution)
+      - files:read             # attachments (images / PDFs / code)
+      - reactions:write        # the eyes / check / warning progress reactions
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention            # someone @Cairn'd us
+      - message.im             # DM
+      - message.channels       # PASSIVE CAPTURE: public-channel messages
+      - message.groups         # same for private channels it is in
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
