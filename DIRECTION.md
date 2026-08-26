@@ -243,10 +243,59 @@ catch it. Belongs with the supersession work in Phase 3.
 - Scope as an explicit policy
 - Deeper recall for log-style questions
 
-**Phase 3 — the moat** _(gap 3)_
-- Decision supersession: timeline-aware memory; newer decisions mark older ones
-  superseded, and recall says so
-- Contradiction detection: _"this contradicts @alice's March decision"_
+**Phase 3 — the moat** — ✅ **done 2026-08-26** _(verified live)_
+- [x] **Near-duplicate collapsing.** The same decision saved live and then again
+      by backfill comes back re-phrased every time, and exact-content dedup
+      catches none of it: after one evening the store held 7 memories carrying 3
+      facts, the Postgres decision appearing four times in four wordings. On
+      write, the closest live memories are compared and a duplicate collapses
+      into the existing row — keeping the *richer* wording, since a fuller
+      account of the same decision is worth having and a paraphrase is not.
+- [x] **Supersession.** A decision that replaces an older one retires it:
+      `superseded_by` is set, and `_fetch` — the single choke point both
+      retrieval legs pass through — skips retired rows. The row is kept, so the
+      history stays auditable; it just stops being an answer.
+- [x] **Chain-aware.** Decisions form chains (24h → 4h → 8h → 6h). Comparing
+      against only the closest memory retires the middle link and leaves the
+      *original* live — still well-sourced, still confidently wrong. A live run
+      did exactly that, so each write is now checked against several neighbours.
+- [x] **`cairn-backfill --compact`** replays the same classification over
+      memories written before any of this existed. Took the live store from 10
+      rows / 3 facts to 3 rows / 3 facts.
+
+_Why thresholds alone could not do this._ Measured on the real store's own
+vectors: same fact re-phrased **0.12–0.15**, same subject with the answer changed
+**0.179**, different subject **0.49–0.60**. The first two bands nearly touch —
+"we cap review at 24 hours" and "we moved review to 4 hours" *are* textually
+similar — so distance only decides how much to ask: below `CAIRN_DEDUP_DISTANCE`
+collapse for free, below `CAIRN_RELATED_DISTANCE` spend one model call to
+classify duplicate/replaces/independent, above it just store.
+
+_The classification is a model call, so it is **non-deterministic** — compacting
+the live store twice gave opposite verdicts on the same pair. Three things
+contain that:_
+- **`temperature=0`** on every classification call. These are judgements, not
+  writing; sampling variety here just means the same question gets different
+  answers on different days. (Strands keeps params inside the model's config, so
+  it must be merged via `update_config` or the factory's token cap is dropped.)
+- **Verdicts are cached** by the pair of texts. Same texts, same question — the
+  only thing that would change the answer is the model's own randomness, so
+  re-asking is a re-roll rather than a re-examination. Measured: 2.4s → 0.0s on
+  a repeat.
+- **`--recheck` bypasses the cache.** Caching *locks in* a verdict, including a
+  wrong one, and the verdict most likely to be wrong is "independent" — it
+  leaves both rows live, so nothing later would correct it. This is the escape
+  hatch for exactly that.
+
+_And it stays conservative by construction:_ an unclear or failed answer falls
+back to "independent", because a stale row is a much smaller problem than a live
+decision wrongly retired, which stops being answerable at all and is far harder
+to notice.
+
+_Not done, and only worth it if this misfires in practice:_ majority voting over
+three calls (3× the cost), deterministic rules for common shapes ("same subject,
+same unit, different number" needs no model call), and a human confirmation step
+before retiring a decision.
 
 **Phase 4 — earn proactivity back**
 - Surface a relevant past decision when a debate restarts. Same engine, pushed.

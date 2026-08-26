@@ -135,6 +135,40 @@ prompt edit could silently regress quality and we'd never know.
 ---
 
 ## Status log
+- **2026-08-26 (feat/cairn, Phase 3)** — **Memory hygiene: near-duplicates
+  collapse, replaced decisions retire.** The store had become the argument for
+  this: 7 memories carrying 3 facts, the Postgres decision stored four times in
+  four wordings (saved live, then re-read by backfill), and "cap review at 24
+  hours" sitting beside "moved it to 4 hours" as equally-cited truths.
+  **(A) Both problems, one mechanism.** On write, the closest live memories are
+  compared by cosine distance. A duplicate collapses into the existing row
+  (keeping the richer wording); a replacement retires the old row via
+  `superseded_by`. `_fetch` — the one choke point both retrieval legs pass
+  through — skips retired rows, so a stale decision can never come back *with a
+  citation*, which is the worst failure this product has.
+  **(B) Thresholds alone cannot separate the cases.** Measured on the real
+  store's vectors: same fact re-phrased 0.12–0.15, answer changed 0.179,
+  different subject 0.49–0.60. The first two nearly touch, so distance only
+  decides how much to ask — free collapse below `CAIRN_DEDUP_DISTANCE`, one model
+  call to classify below `CAIRN_RELATED_DISTANCE`, store above it.
+  **(C) Chain-aware.** A live run retired the middle of a 24h→4h→8h chain and
+  left the *original* live. Each write is now checked against several neighbours;
+  adding "6 hours" correctly retired all three earlier versions.
+  **(D) `cairn-backfill --compact`** replays this over pre-existing rows: took the
+  live store from 10 rows / 3 facts to 3 rows / 3 facts.
+  **(E) Containing the non-determinism.** The classification is a model call, so
+  compacting twice gave opposite verdicts on the same pair. Three fixes:
+  `temperature=0` on all classification calls (they are judgements, not writing —
+  and Strands keeps params in the model config, so it must be merged via
+  `update_config` or the factory's token cap is silently dropped); **verdicts are
+  cached** by the pair of texts, since re-asking an unchanged question is a
+  re-roll not a re-examination (2.4s → 0.0s measured); and `--recheck` bypasses
+  the cache, because caching locks in a verdict and the one most likely to be
+  wrong is "independent" — it leaves both rows live, so nothing later would
+  correct it. Still conservative: unclear or failed → "independent".
+  **Tests 203.**
+  **Open:** the `loop/` package rename; `loop-eval` still not re-run since the
+  Gemini swap (and the golden set has no dedup/supersession cases yet).
 - **2026-08-26 (feat/cairn, later)** — **Phase 1 done: Cairn now learns from
   conversations nobody addressed to it, including ones that predate it.** See
   `DIRECTION.md` for the full write-up.

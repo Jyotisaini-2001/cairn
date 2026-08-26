@@ -39,6 +39,14 @@ _JSON_SYSTEM = (
 _json_agent = None
 
 
+def _temperature() -> float:
+    try:
+        return max(0.0, float(os.environ.get("CAIRN_EXTRACT_TEMPERATURE", "0")))
+    except ValueError:
+        return 0.0
+
+
+
 def _agent():
     """A tool-less Strands agent used purely for JSON extraction.
 
@@ -57,8 +65,24 @@ def _agent():
 
         from loop.agent import _build_model  # noqa: PLC0415 (avoids an import cycle)
 
+        model = _build_model(os.environ.get("CAIRN_EXTRACT_MODEL") or None)
+        # Temperature 0: always take the most likely token instead of sampling.
+        # These are classification calls, not writing — creativity here shows up
+        # as the same question getting different answers on different days
+        # (compacting the live store twice gave opposite verdicts on one pair).
+        # Not a hard guarantee (batching and float ordering still vary), but it
+        # removes most of the variance.
+        # Strands models keep provider params inside their config, not on the
+        # instance, and expose get_config()/update_config() — so merge rather than
+        # assign, or the factory's max-token cap is silently dropped.
+        try:
+            params = dict((model.get_config() or {}).get("params") or {})
+            params["temperature"] = _temperature()
+            model.update_config(params=params)
+        except Exception:  # noqa: BLE001 - a provider that does not accept it
+            log.debug("could not set temperature on %s", type(model).__name__)
         _json_agent = Agent(
-            model=_build_model(os.environ.get("CAIRN_EXTRACT_MODEL") or None),
+            model=model,
             system_prompt=_JSON_SYSTEM,
             tools=[],
             callback_handler=None,   # these are data calls; nothing to stream to stdout

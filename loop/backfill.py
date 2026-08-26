@@ -207,13 +207,36 @@ def main() -> int:
                         format="%(message)s")
 
     ap = argparse.ArgumentParser(description="Backfill Cairn's memory from Slack history.")
-    ap.add_argument("--channel", required=True, help="channel id, e.g. C0123ABCD")
+    ap.add_argument("--channel", help="channel id, e.g. C0123ABCD")
+    ap.add_argument("--recheck", action="store_true",
+                    help="with --compact: ignore cached verdicts and ask again "
+                         "(the judgement is a model call, so it can differ)")
+    ap.add_argument("--compact", action="store_true",
+                    help="skip Slack; collapse duplicates and retire superseded "
+                         "memories already in the store")
     ap.add_argument("--days", type=int, default=0, help="only look back this many days (0 = all)")
     ap.add_argument("--limit", type=int, default=10, help="max conversations to distil (model calls)")
     ap.add_argument("--max-messages", type=int, default=1000, help="max messages to scan")
     ap.add_argument("--dry-run", action="store_true",
                     help="show what would be distilled, without any model calls")
     args = ap.parse_args()
+
+    if args.compact:
+        from loop.agent import _memory_store
+        store = _memory_store()
+        if not hasattr(store, "compact"):
+            print("compaction needs the hybrid memory backend (CAIRN_MEMORY_BACKEND=hybrid)")
+            return 1
+        stats = store.compact(dry_run=args.dry_run, limit=args.limit,
+                              recheck=args.recheck)
+        print(f"\nscanned {stats['scanned']} memories, "
+              f"{stats['duplicates']} duplicate(s), {stats['superseded']} superseded, "
+              f"{stats['calls']} model call(s)" + (" [dry run]" if args.dry_run else ""))
+        return 0
+
+    if not args.channel:
+        print("--channel is required (or use --compact)")
+        return 1
 
     from slack_sdk import WebClient
     token = os.environ.get("SLACK_BOT_TOKEN") or next(
