@@ -1,4 +1,4 @@
-# Loop — Progress & Roadmap
+# Cairn — Progress & Roadmap
 
 _Living status doc for cross-session continuity. Update the "Status log" at the
 bottom every working session. Read this + `architecture.md` + `CLAUDE.md` before
@@ -9,7 +9,7 @@ starting work._
 - **Stack:** Python ≥3.10, Strands Agents, slack-bolt (Socket Mode), SQLite.
 - **Provider:** migrating to **MiniMax M3** via MiniMax's Anthropic-compatible
   endpoint — **env-only change, no code change** (see `.env.example`, `architecture.md`).
-- **Shape:** one process can run **several Slack apps** at once (e.g. `Loop` +
+- **Shape:** one process can run **several Slack apps** at once (e.g. `Cairn` +
   `Rasputin_Loop`), each its own agent/persona; three entrypoints per app
   (`@mention`, DM, `/loop`); tools = `slack`, `slack_send_message`, `calculator`,
   `think` + long-term memory.
@@ -20,7 +20,7 @@ starting work._
 ### MiniMax M3 migration — checklist
 - [x] Confirm M3 reachable via Anthropic-compatible API (`https://api.minimax.io/anthropic`).
 - [x] Document env vars + key source in `.env.example`.
-- [ ] Fill real MiniMax key in local `.env` and smoke-test one `@Loop` mention.
+- [ ] Fill real MiniMax key in local `.env` and smoke-test one `@Cairn` mention.
 - [ ] Confirm tool-calling works through MiniMax (slack lookup + add_memory round-trip).
 - [ ] Decide whether to bump the code default model id off `claude-sonnet-4-6`.
 
@@ -29,27 +29,27 @@ starting work._
 ## Production roadmap — the 5 Pillars of Production AI
 
 Framework: _"Each pillar enables the next. Skip one and the whole thing breaks
-in production."_ Below, each pillar is scored against Loop **today** and given
+in production."_ Below, each pillar is scored against Cairn **today** and given
 the next concrete moves.
 
 ### 01 — Evaluation · _Define success before code_  — ✅ in place (v0.3.0)
-`loop-eval` runs `evals/golden.json` (~18 cases) through the real agent and scores
+`cairn-eval` runs `evals/golden.json` (~18 cases) through the real agent and scores
 tool selection + reply content (must/must-not contain), prints a scorecard, and
 exits non-zero on regression. Results persist to `eval_results`.
 - [x] Golden set with per-case expectations (tools + content), per-category scoring.
-- [x] CLI runner with CI exit code (`loop-eval`, `--limit`, `--case`, `--json`).
+- [x] CLI runner with CI exit code (`cairn-eval`, `--limit`, `--case`, `--json`).
 - [x] **Memory evals (25 cases):** provenance recall (answer derivable only from
       who/where metadata → `mem-recall-provenance-who`), semantic recall across
       wording (`mem-recall-semantic`, no shared tokens), selective save vs skip
-      chit-chat, and recall correctness. `loop-eval` now **isolates memory** to a
+      chit-chat, and recall correctness. `cairn-eval` now **isolates memory** to a
       throwaway DB per run (eval_results still persist) so cases are deterministic
       and don't pollute production memory. New memory cases verified 7/7 live.
-- [ ] Wire `loop-eval` into CI; add groundedness + cost metrics.
+- [ ] Wire `cairn-eval` into CI; add groundedness + cost metrics.
 - [ ] Run Claude vs MiniMax M3 to quantify the migration.
 
 ### 02 — Observability · _See everything, always_  — ✅ in place (v0.3.0)
-Per-interaction JSON telemetry (`loop.obs`) + an `interactions` row, **and**
-per-step traces (`loop.trace`) for every model call, tool call, and reasoning
+Per-interaction JSON telemetry (`cairn.obs`) + an `interactions` row, **and**
+per-step traces (`cairn.trace`) for every model call, tool call, and reasoning
 chunk + a `steps` row. `LOG_LEVEL=DEBUG` shows full thinking + tool I/O.
 - [x] Structured logs per request (request id, channel, user, model, tokens, latency, outcome).
 - [x] Step-level traces: reasoning + model API calls + tool inputs/outputs.
@@ -86,7 +86,7 @@ synchronous/blocking; agent rebuilt per request when MCP is active; no thread co
       (anthropic/litellm/openai/bedrock/ollama/gemini) — no vendor lock-in — with
       per-run model routing (`model_id` override) for cost-cheap background work.
 - [x] **Ambient mode** (`CAIRN_AMBIENT`, off by default): daemon-per-app loop that
-      follows up on stalled threads (`loop/ambient.py`); pluggable discovery
+      follows up on stalled threads (`cairn/ambient.py`); pluggable discovery
       (narrow default), live staleness re-check, re-nudge guard, per-app posting.
 - [ ] Timeouts, retries with backoff, graceful degradation on provider errors.
 - [ ] Non-blocking Slack handling (ack fast, process async).
@@ -123,18 +123,48 @@ The point isn't the launch numbers — it's what happened next:
 > cases added to prevent recurrence.**
 
 _"Observable. Debuggable. Improvable. That's what you get when you build
-measurement first."_ → For Loop, this argues for doing **Pillar 02 (observability)
+measurement first."_ → For Cairn, this argues for doing **Pillar 02 (observability)
 + Pillar 01 (eval)** before adding features. Without them, a MiniMax M3 swap or a
 prompt edit could silently regress quality and we'd never know.
 
 ### Suggested next sprint (now that the harness exists)
-1. Wire `loop-eval` into CI and run **Claude vs MiniMax M3** for a baseline diff.
+1. Wire `cairn-eval` into CI and run **Claude vs MiniMax M3** for a baseline diff.
 2. Export traces to an OTLP backend (Phoenix/Langfuse) + a simple dashboard.
 3. AuthZ allow-list + PII redaction before persistence (Pillar 05).
 
 ---
 
 ## Status log
+- **2026-08-26 (feat/cairn, Phases 2 + 4)** — **All five phases of `DIRECTION.md`
+  are now done.**
+  **(A) Phase 2 — the decision log** (`cairn/decisions.py`). Recall had only ever
+  been a side effect of chatting: a few memories injected before a reply. Right
+  for "why did we pick Postgres?", wrong for "what did we decide last week",
+  which wants a list, ordered, sourced, and longer than a prompt can carry. The
+  log reads the store directly — deterministic, cannot invent an entry, and still
+  works when the model quota is spent (which, on the free tier, it regularly is).
+  Understands time windows ("last week", "past 3 days"), which semantic search
+  structurally cannot answer. Two entry points: a `decision_log` tool for the
+  agent, and `/cairn` (alias `/loop`) which answers straight from the log with no
+  model call when the ask is about the record.
+  **(B) Scope became an explicit policy** (`context.scope_policy` / `scope_for`).
+  The log runs outside an agent turn, so it needed the isolation rules without a
+  live `RequestState` — otherwise a slash command would have been a way around
+  per-channel memory isolation.
+  **(C) Phase 4 — resurfacing** (`cairn/resurface.py`, off by default). When
+  someone re-opens a settled question, Cairn posts the decision and its source
+  in-thread. Deferred until now on purpose: a bot that interrupts wrongly gets
+  muted and never recovers. The bar is a question (not a statement — a decision
+  being made is capture's job), a strong match against a **live** decision at a
+  tighter threshold than recall's (nothing judges the output; the unprompted
+  message *is* the output), and once per decision per channel per cooldown. The
+  wording offers rather than polices — a team may be revisiting something on
+  purpose.
+  **Tests 245.** **Open:** the golden set still has no cases for capture, dedup,
+  supersession, the decision log or resurfacing — a full `cairn-eval` run is
+  structurally impossible on Gemini's free tier (29 cases, ~30-40 model calls, 20
+  per day per model), so this needs paid quota. Also still open: the `cairn/`
+  package rename, and README/architecture prose still says "Cairn".
 - **2026-08-26 (feat/cairn, Phase 3)** — **Memory hygiene: near-duplicates
   collapse, replaced decisions retire.** The store had become the argument for
   this: 7 memories carrying 3 facts, the Postgres decision stored four times in
@@ -167,12 +197,12 @@ prompt edit could silently regress quality and we'd never know.
   wrong is "independent" — it leaves both rows live, so nothing later would
   correct it. Still conservative: unclear or failed → "independent".
   **Tests 203.**
-  **Open:** the `loop/` package rename; `loop-eval` still not re-run since the
+  **Open:** the `cairn/` package rename; `cairn-eval` still not re-run since the
   Gemini swap (and the golden set has no dedup/supersession cases yet).
 - **2026-08-26 (feat/cairn, later)** — **Phase 1 done: Cairn now learns from
   conversations nobody addressed to it, including ones that predate it.** See
   `DIRECTION.md` for the full write-up.
-  **(A) One reader** (`loop/conversation.py`) for context, capture and backfill,
+  **(A) One reader** (`cairn/conversation.py`) for context, capture and backfill,
   so a captured memory always corresponds to a conversation Cairn could also have
   read. Brought the **channel-context fallback** with it — a mention outside a
   thread now gets recent channel messages (1 model call / 10k tokens, versus 3 /
@@ -202,8 +232,8 @@ prompt edit could silently regress quality and we'd never know.
   failed silently. Now routed through the provider factory.
   **Tests 181** (+52 today). **Open:** near-duplicate memories (backfill
   re-phrases something already saved live; exact dedup misses it) — belongs with
-  Phase 3 supersession. Also still open: the `loop/` package rename, and
-  `loop-eval` has not been re-run since the Gemini swap.
+  Phase 3 supersession. Also still open: the `cairn/` package rename, and
+  `cairn-eval` has not been re-run since the Gemini swap.
 - **2026-08-26 (feat/cairn)** — **Direction set, renamed to Cairn, Phase 0
   foundations done and verified live.** See `DIRECTION.md` (now read-first in
   `CLAUDE.md`) for the decision and roadmap. The project was three ~60% products
@@ -214,7 +244,7 @@ prompt edit could silently regress quality and we'd never know.
   (requests `channels:history` + `message.channels`, which is what will let it
   read conversations it was not mentioned in). Agent identity now states the
   direction: cite who/where/when, an answer without a source is a rumour. 247
-  `LOOP_*` env vars → `CAIRN_*`. The `loop/` package keeps its name for now.
+  `CAIRN_*` env vars → `CAIRN_*`. The `cairn/` package keeps its name for now.
   **(B) Provider swap, forced.** MiniMax credits ran out mid-session ("Token Plan
   usage limit reached"), so we moved to Gemini's free tier — and found the
   `gemini` branch of the provider factory had **never been exercised**: it passed
@@ -246,18 +276,18 @@ prompt edit could silently regress quality and we'd never know.
   **Open:** thread context only fires inside a thread — a mention in the channel
   (how people actually talk) still gets nothing, so a **recent-channel-history
   fallback** is the next obvious win. Also: the `slack` tool is tool-happy; the
-  `loop/` package rename; `loop-eval` has not been re-run since the Gemini swap.
+  `cairn/` package rename; `cairn-eval` has not been re-run since the Gemini swap.
 - **2026-07-10 (session/marketplace-prep)** — **Marketplace-prep hardening; two
   root causes killed; everything re-verified live** (see `SESSION_PROGRESS.md`
-  for the full session record). **(1) DBs untracked from git** — `data/loop.db`
-  + `loop_vec.db` were deliberate `.gitignore` exceptions; every checkout swapped
+  for the full session record). **(1) DBs untracked from git** — `data/cairn.db`
+  + `cairn_vec.db` were deliberate `.gitignore` exceptions; every checkout swapped
   the inode under the running app → the entire WAL/readonly saga. Runtime data
   is now local-only. **(2) Reasoning telemetry fixed** — MiniMax's endpoint
   drifted: it no longer leaks inline `<think>` text and only returns `thinking`
   blocks when the request opts in. `_build_model` now sends
   `thinking={enabled, CAIRN_THINKING_BUDGET (default 1024)}`; verified live
   (reasoning persisted for real Slack turns). **(3) GHOST PROCESS found** — an
-  old (~663e9a2-era) Loop instance on another machine shares the Rasputin app
+  old (~663e9a2-era) Cairn instance on another machine shares the Rasputin app
   token; Socket Mode round-robins events to it, which is why past fixes "didn't
   work" live. Evict by regenerating the app-level tokens. **(4) Assign-by-name
   verified end-to-end in production**: "ishan should fix this" → staged →
@@ -286,10 +316,10 @@ prompt edit could silently regress quality and we'd never know.
   (name-first, requester-mention-loses); suite green.
 - **2026-07-07 (fix/db-wal-mode, live-test follow-up)** — **Live run surfaced two
   environment issues + one resilience gap; fixed the code gap.** (1) A **stale
-  `python -m loop.main` process from Jun-24 (old WAL-mode code)** was still running
-  alongside the new app, holding an unlinked `loop.db` inode + `-wal`/`-shm` — the
+  `python -m cairn.main` process from Jun-24 (old WAL-mode code)** was still running
+  alongside the new app, holding an unlinked `cairn.db` inode + `-wal`/`-shm` — the
   classic "silent/duplicate bot" + DB-contention cause. Kill stale processes and
-  run exactly one. (2) Rewriting `data/loop.db` with **git while the app was live**
+  run exactly one. (2) Rewriting `data/cairn.db` with **git while the app was live**
   (stash/checkout during the merge) swapped the inode under the long-running
   process, wedging its cached connection → every telemetry write hit
   `sqlite3.OperationalError: attempt to write a readonly database` (a fresh process
@@ -331,10 +361,10 @@ prompt edit could silently regress quality and we'd never know.
   deterministic staging path.
   **(4) Ambient + memory extended.** Ambient (per decision) **never** stages/creates
   Jira tickets — it may only *suggest* one in words; a human must ask (prompt tweak
-  only). New `loop/memory_capture.py` (off unless `CAIRN_MEMORY_CAPTURE=on`): decisions/
-  commitments in channels Loop merely **observes** are distilled (regex gate → focused
+  only). New `cairn/memory_capture.py` (off unless `CAIRN_MEMORY_CAPTURE=on`): decisions/
+  commitments in channels Cairn merely **observes** are distilled (regex gate → focused
   model call) and saved to the long-term (vector) store **with provenance**, so
-  "what did we decide about X" recall works without an `@Loop` turn (gaps B/I/K).
+  "what did we decide about X" recall works without an `@Cairn` turn (gaps B/I/K).
   Scoped by `CAIRN_MEMORY_SCOPE`; exact-content dedup on the store side.
   **Tests:** +22 (`test_reasoning` 6, `test_jira` 10, `test_memory_capture` 6), all
   green; existing suites still 17/17. Golden set: `<think>`/`</think>` added to
@@ -348,7 +378,7 @@ prompt edit could silently regress quality and we'd never know.
   to `StdioServerParameters`; without this, MCP servers (`mcp-atlassian`, `mcp-server-fetch`)
   started but returned zero tools (credentials not visible to subprocess). Verified
   `mcp-atlassian` loads 49 tools with fix, 0 without.
-  **(B) Native Jira tools** — `loop/jira_tool.py`: `jira_stage_ticket` (saves to
+  **(B) Native Jira tools** — `cairn/jira_tool.py`: `jira_stage_ticket` (saves to
   in-process `_pending` dict keyed by thread_ts, returns confirmation text),
   `jira_create_issue` (REST API with assignee resolution), `jira_search_issues`,
   `_create_jira_issue_direct` (called directly from slack_app, bypasses agent).
@@ -383,7 +413,7 @@ prompt edit could silently regress quality and we'd never know.
     take a WHERE); dedup scoped to match. No migration (channel/team already stamped).
     Verified live on both backends incl. semantic isolation; +2 regression tests
     (`test_channel_scope_*`), suite 9/9.
-    **(C) Ambient PM mode** — new `loop/ambient.py`, off unless `CAIRN_AMBIENT=on`;
+    **(C) Ambient PM mode** — new `cairn/ambient.py`, off unless `CAIRN_AMBIENT=on`;
     `maybe_start()` spawns a daemon per app from `slack_app.start()`. **Two discovery
     modes** via `CAIRN_AMBIENT_DISCOVERY`: `interactions` (narrow default = threads we
     touched, from the telemetry DB) and `channels` (**full-channel scan** via
@@ -396,10 +426,10 @@ prompt edit could silently regress quality and we'd never know.
     (`rasputin:ambient` rows recorded, MiniMax-M3, no guardrail hits).
     **(D) Sandbox via MCP** — documented only: point `CAIRN_MCP_SERVERS` at a
     code-exec MCP server (zero core code; per-request rebuild). Single-server MCP
-    limitation noted. **Evals:** `loop-eval` 25/28 live on MiniMax-M3; +3
+    limitation noted. **Evals:** `cairn-eval` 25/28 live on MiniMax-M3; +3
     `memory-scope` golden cases (channel isolation through the real agent, all pass);
     3 failures are M3 tool-happiness on smalltalk/safety (pass on retry, unrelated to
-    the diff). **Open:** `loop-eval` provider A/B + CI gate; enterprise track (authz,
+    the diff). **Open:** `cairn-eval` provider A/B + CI gate; enterprise track (authz,
     PII, per-workspace DB isolation, ambient rate/cost caps, self-hosted in-VPC
     sandbox). `.env.example` documents every new var.
 - **2026-06-24 (v0.4.0)** — **Hybrid RAG memory + Slack AI Assistant merged to
@@ -410,7 +440,7 @@ prompt edit could silently regress quality and we'd never know.
   pluggable, default `fastembed` (local, **no key**; confirmed MiniMax `embo-01`
   needs only the key — **no Group ID** on api.minimax.io). Verified end-to-end: a
   live agent turn saved then **semantically recalled** ("runbook for outages" →
-  "playbook in Notion under SRE") **with provenance citation**, and `loop-eval`
+  "playbook in Notion under SRE") **with provenance citation**, and `cairn-eval`
   memory cases pass on the hybrid backend. (2) **Exact-content dedup** on write +
   prompt nudge to not re-save on recall (model can still re-phrase → near-dup is a
   known follow-up). (3) **Slack AI Assistant** (`CAIRN_SLACK_ASSISTANT=on`):
@@ -418,7 +448,7 @@ prompt edit could silently regress quality and we'd never know.
   connected live and attached the assistant cleanly. `.env` set to
   `hybrid`+`fastembed`+assistant-on; `pip install -e ".[vector]"`. Bumped to
   v0.4.0. Added **7 memory evals** (provenance recall, semantic recall across
-  wording, selective save vs skip-chit-chat); `loop-eval` now isolates memory to a
+  wording, selective save vs skip-chit-chat); `cairn-eval` now isolates memory to a
   throwaway DB per run via `CAIRN_MEMORY_DB_PATH`/`CAIRN_VECTOR_DB_PATH` (eval_results
   still persist) — new cases 7/7 green live. Note: MiniMax M3 sometimes re-saves a
   re-phrased fact on a recall turn (exact dups deduped; not asserted in CI).
@@ -436,11 +466,11 @@ prompt edit could silently regress quality and we'd never know.
   metadata). System prompt gained **memory discipline** (save decisions/facts/
   prefs/episodes; skip chit-chat — the agent is the filter). Added
   `tests/test_memory.py` (6 cases, all green; runnable without pytest). Migration
-  is additive + idempotent; verified against a copy of the committed `loop.db`
+  is additive + idempotent; verified against a copy of the committed `cairn.db`
   (existing row re-indexed, recall works across wording). **Experimental, on
   branches (not merged):** `feat/vector-memory-turso` (libSQL/Turso native vector
   search + pluggable embeddings — fastembed default = no key) and
-  `feat/slack-assistant` (native Slack "Assistant" AI surface). Hackathon: Loop
+  `feat/slack-assistant` (native Slack "Assistant" AI surface). Hackathon: Cairn
   qualifies today via **MCP server integration** (`CAIRN_MCP_SERVERS`); the
   Assistant branch adds a clean **Slack AI capabilities** claim.
 - **2026-06-24 (pm)** — **Multi-app support.** `slack_app._discover_apps()` +
@@ -448,10 +478,10 @@ prompt edit could silently regress quality and we'd never know.
   Mode thread), via `SLACK_BOT_TOKEN_<NAME>`/`SLACK_APP_TOKEN_<NAME>` pairs (bare
   `SLACK_BOT_TOKEN`/`SLACK_APP_TOKEN` still works). One agent per app
   (`get_agent(app_name)`), each with optional `CAIRN_PERSONA_<NAME>` system-prompt
-  override — the seam for giving Loop vs Rasputin_Loop different jobs. Telemetry
+  override — the seam for giving Cairn vs Rasputin_Loop different jobs. Telemetry
   `entrypoint` is now `<app>:<kind>`. Diagnosed the "@Rasputin_Loop silent" issue:
-  tokens were correct but **stale `loop` processes** (one on Loop's old env) were
-  answering `@Loop`, and Rasputin_Loop almost certainly lacks **Event
+  tokens were correct but **stale `loop` processes** (one on Cairn's old env) were
+  answering `@Cairn`, and Rasputin_Loop almost certainly lacks **Event
   Subscriptions** (`app_mention`/`message.im`). `.env.example` documents the
   multi-app + persona convention. Verified discovery + persona via a scratch test.
 - **2026-06-24** — Shipped **v0.3.1: file attachments / multimodal input**.
@@ -463,7 +493,7 @@ prompt edit could silently regress quality and we'd never know.
   inlined. DM `file_share` uploads now answered (subtype no longer dropped).
   System prompt + `.env.example` + `architecture.md` updated. PDFs extracted via
   **pypdf** (lightweight) and inlined as text. Diagnosed the silent-bot issue:
-  `.env` had Loop's tokens in `SLACK_BOT_TOKEN`/`SLACK_APP_TOKEN` and the
+  `.env` had Cairn's tokens in `SLACK_BOT_TOKEN`/`SLACK_APP_TOKEN` and the
   Rasputin_Loop bot token in an unread var — fixed the bot token, flagged the
   xapp to regenerate under app `A0BCVHES936`. **Open:** verify M3's
   *Anthropic-compatible* endpoint accepts image blocks (else fall back to MiniMax
@@ -472,13 +502,13 @@ prompt edit could silently regress quality and we'd never know.
   dict bug (replies were "_(no response)_"). Added a `message` handler (channel
   tracking + DM support, kills Bolt 404s). **Observability:** edge telemetry
   (`interactions`) + step tracing (`steps`) for every model call / tool call /
-  reasoning chunk (`loop.obs`/`loop.trace`). **Guardrails:** enforcing tool-call
+  reasoning chunk (`cairn.obs`/`cairn.trace`). **Guardrails:** enforcing tool-call
   limits (max calls, repeats, risky Slack methods, token budget) via Strands
   hooks + `cancel_tool`, per-rule env toggles. **Evals:** `evals/golden.json`
-  (~18 cases) + `loop-eval` runner (`eval_results` table, CI exit code).
+  (~18 cases) + `cairn-eval` runner (`eval_results` table, CI exit code).
   New modules: `context.py`, `tracing.py`, `guardrails.py`, `eval.py`. Persisted
   memory `metadata`. Updated `.env.example`, `architecture.md`.
-- **2026-06-23 (am)** — Adjusted Loop for **MiniMax M3** (Anthropic-compatible
+- **2026-06-23 (am)** — Adjusted Cairn for **MiniMax M3** (Anthropic-compatible
   endpoint, env-only). Rewrote `.env.example` with Slack-token + MiniMax-key
   guidance. Created the cross-session harness: `CLAUDE.md`, `architecture.md`,
   this file. Mapped current state to the 5 Pillars and the observability ROI study.

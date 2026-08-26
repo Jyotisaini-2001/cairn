@@ -13,7 +13,7 @@ the standard hybrid-RAG retrieval pattern and beats either signal alone.
 Why libSQL/Turso: it *is* SQLite, so the content, provenance columns, FTS5 index,
 and vectors all live in one local file (no server), queried transactionally, and
 can later sync to Turso cloud. It stores/searches vectors but does **not** create
-them — embeddings come from `loop.embeddings` (default `fastembed`, local, no API
+them — embeddings come from `cairn.embeddings` (default `fastembed`, local, no API
 key; `minimax`/`openai` optional).
 
 Same Strands `MemoryStore` contract, same provenance stamping, and same
@@ -21,9 +21,9 @@ Same Strands `MemoryStore` contract, same provenance stamping, and same
 format, and tools are unchanged — only recall quality differs.
 
 Enable:
-    pip install "loop[vector]"
+    pip install "cairn[vector]"
     CAIRN_MEMORY_BACKEND=hybrid          # (libsql/turso/vector are aliases)
-    CAIRN_EMBEDDINGS=fastembed           # local, no key. See loop/embeddings.py
+    CAIRN_EMBEDDINGS=fastembed           # local, no key. See cairn/embeddings.py
 """
 from __future__ import annotations
 
@@ -38,13 +38,13 @@ from typing import Any
 
 from strands.memory.types import MemoryEntry, SearchOptions
 
-from loop import context as reqctx
-from loop.embeddings import Embedder, get_embedder
-from loop.storage import _fts_match  # reuse the injection-safe query sanitizer
+from cairn import context as reqctx
+from cairn.embeddings import Embedder, get_embedder
+from cairn.storage import _fts_match  # reuse the injection-safe query sanitizer
 
-log = logging.getLogger("loop.vector")
+log = logging.getLogger("cairn.vector")
 
-DEFAULT_VECTOR_DB_PATH = "./data/loop_vec.db"
+DEFAULT_VECTOR_DB_PATH = "./data/cairn_vec.db"
 _PROVENANCE_COLS = ("kind", "author", "channel", "team", "source", "thread_ts")
 _RRF_K = 60  # Reciprocal Rank Fusion damping constant (standard default)
 
@@ -145,7 +145,7 @@ def _classify(new_content: str, old_content: str) -> str:
     a live decision wrongly retired — a retired decision stops being answerable
     at all, which is much harder to notice.
     """
-    from loop.llm import extract_json  # noqa: PLC0415 (import cycle at module load)
+    from cairn.llm import extract_json  # noqa: PLC0415 (import cycle at module load)
 
     data = extract_json(
         "Two statements about a team's decisions.\n\n"
@@ -167,7 +167,7 @@ class HybridMemoryStore:
 
     name = "loop_memory"
     description = (
-        "Loop's hybrid (full-text + semantic) memory of crucial facts, decisions, "
+        "Cairn's hybrid (full-text + semantic) memory of crucial facts, decisions, "
         "preferences, and episodes — each stamped with who said it, where, and when."
     )
     max_search_results = 5
@@ -179,7 +179,7 @@ class HybridMemoryStore:
             import libsql_experimental as libsql  # noqa: PLC0415 (optional dep)
         except ImportError as err:  # pragma: no cover
             raise RuntimeError(
-                'libSQL not installed. Run: pip install "loop[vector]" '
+                'libSQL not installed. Run: pip install "cairn[vector]" '
                 "(or set CAIRN_MEMORY_BACKEND=sqlite for the FTS5-only store)."
             ) from err
 

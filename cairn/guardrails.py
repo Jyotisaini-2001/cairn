@@ -1,4 +1,4 @@
-"""Guardrails for Loop (Pillars 04 orchestration / 05 governance).
+"""Guardrails for Cairn (Pillars 04 orchestration / 05 governance).
 
 Keeps the agent from going haywire: runaway tool loops, repeated identical calls,
 risky Slack methods, and runaway token spend. Implemented as a Strands
@@ -25,11 +25,11 @@ from typing import Any
 
 from strands.hooks import BeforeToolCallEvent, HookProvider, HookRegistry
 
-from loop import context
-from loop import observability as obs
-from loop.tracing import tool_signature
+from cairn import context
+from cairn import observability as obs
+from cairn.tracing import tool_signature
 
-log = logging.getLogger("loop.guard")
+log = logging.getLogger("cairn.guard")
 
 _DEFAULT_BLOCKED = "chat.delete,conversations.archive,conversations.kick,admin.*"
 

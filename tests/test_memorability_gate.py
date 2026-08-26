@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from loop.memory_capture import looks_memorable
+from cairn.memory_capture import looks_memorable
 
 
 @pytest.mark.parametrize("text", [

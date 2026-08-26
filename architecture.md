@@ -1,9 +1,9 @@
-# Loop — Architecture
+# Cairn — Architecture
 
-_Last updated: 2026-07-06 (v0.5.0: Jira auto-triage + MCP env forwarding fix). Keep this current; it is the cross-session source of truth for how Loop is wired._
+_Last updated: 2026-07-06 (v0.5.0: Jira auto-triage + MCP env forwarding fix). Keep this current; it is the cross-session source of truth for how Cairn is wired._
 
-Loop is a Slack-native AI agent built on [Strands Agents](https://strandsagents.com/).
-When a user `@Loop`-mentions the bot or runs `/loop`, a single Strands agent
+Cairn is a Slack-native AI agent built on [Strands Agents](https://strandsagents.com/).
+When a user `@Cairn`-mentions the bot or runs `/loop`, a single Strands agent
 thinks, optionally calls a tool, and replies in-thread. There is **one brain**
 (the agent) — no intent parser, no command router, no extraction pipeline.
 
@@ -31,17 +31,17 @@ slack_bolt.App × N  (Socket Mode, slack_app.py — _discover_apps() builds one 
    • UX: 👀 reaction on receipt → ✅ on success / ⚠️ on error
         │  wraps every call in observability.record(Interaction)
         ▼
-loop.agent.run(prompt, attachments=…, context=…, request_id=…)   (agent.py)
+cairn.agent.run(prompt, attachments=…, context=…, request_id=…)   (agent.py)
    • prepend a [context] line (who/where) so tools can act
    • _build_message(): no files → str; else Strands content list
      [{text}, {image:…} (M3 multimodal) / inlined text for text/code/json/pdf(pypdf)]
-   • set RequestState in a ContextVar (loop/context.py)
+   • set RequestState in a ContextVar (cairn/context.py)
    • if CAIRN_MCP_SERVERS set: enter MCPClient stdio context, merge its tools
         │
         ▼
 Strands Agent
    • model       = AnthropicModel(client_args={api_key, base_url?}, model_id, max_tokens=2048)
-   • system_prompt = Loop persona (Slack mrkdwn, concise, tool guidance)
+   • system_prompt = Cairn persona (Slack mrkdwn, concise, tool guidance)
    • tools       = [slack, slack_send_message, calculator, think,
                     jira_stage_ticket, jira_create_issue, jira_search_issues] (+ MCP tools)
    • memory      = MemoryManager(stores=[_memory_store()], injection=provenance fmt)
@@ -61,27 +61,27 @@ final text → Slack thread;  one JSON telemetry line + interactions row recorde
 
 | File | Responsibility |
 |---|---|
-| `loop/main.py` | Entrypoint (`loop` script). Loads `.env`, configures logging, calls `slack_app.start()`. |
-| `loop/slack_app.py` | Slack Bolt app(s) over **Socket Mode**. `_discover_apps()` + `start()` run **one or many** apps concurrently (one socket thread each). Three handlers (`app_mention`, `message`, `/loop`); `message` tracks all channels + answers DMs (incl. file uploads). `_collect_files()` downloads attachments (`files:read`). Wraps every call in `observability.record` (entrypoint = `<app>:<kind>`). |
-| `loop/agent.py` | Builds **one Strands `Agent` per app** (`get_agent(app_name)`), each with its own system prompt via `_system_prompt()` (base + optional `CAIRN_PERSONA_<NAME>`). `run(prompt, attachments=…, app_name=…)` builds a string or multimodal content list via `_build_message()`, returns an `AgentRun` (text + telemetry), manages the per-request `RequestState`. `_split_reasoning()` strips MiniMax-M3's inline `<think>…</think>` deliberation out of the reply (it arrives as plain text, not an Anthropic reasoning block) → Slack sees the clean answer, the thinking goes to the `reasoning` column. |
-| `loop/context.py` | `RequestState` + a `ContextVar` so the hooks can attribute steps and enforce per-request limits across one `run()`. |
-| `loop/tracing.py` | `LoopTracer` (Strands `HookProvider`) + `reasoning_callback`: logs & persists each model call, tool call, and reasoning chunk. |
-| `loop/guardrails.py` | `Guardrails` (`HookProvider`): enforcing tool-call limits via `cancel_tool`, with per-rule env toggles. |
-| `loop/observability.py` | `Interaction` + `record()` (edge telemetry), `record_step()`, `record_eval()`; owns the `interactions` / `steps` / `eval_results` tables. The `interactions` row now also stores the per-turn `reasoning` (stripped `<think>`) and `response` (the reply we sent) — added by an idempotent column migration. |
-| `loop/eval.py` | `loop-eval` CLI: runs `evals/golden.json` through the real agent and scores tool selection + reply expectations. |
-| `loop/ambient.py` | **Ambient (proactive PM) mode** — off unless `CAIRN_AMBIENT=on`. `maybe_start(configs)` (called from `slack_app.start()`) spawns one daemon thread per app. Each tick discovers stalled threads (pluggable `Discoverer`; default `discover_from_interactions` = threads the app touched whose last non-ambient activity is older than `CAIRN_AMBIENT_STALE_HOURS`), re-checks real staleness via `conversations_replies`, skips recently-nudged threads, runs the agent (optionally on `CAIRN_AMBIENT_MODEL`) to draft a nudge or `NOOP`, and posts via the **per-app** Web client (avoids the bare-`SLACK_BOT_TOKEN` identity of `slack_send_message`). Wrapped in `obs.record` with entrypoint `<app>:ambient`. Ambient never stages/creates Jira tickets — it may only *suggest* one in words; a human must ask. |
-| `loop/jira_tool.py` | Native Jira tools: `jira_stage_ticket` (saves to in-process `_pending` dict, returns confirmation text), `jira_create_issue` (REST API create), `jira_search_issues`. `_create_jira_issue_direct` is the non-tool version called by `slack_app.py` on confirmation. **Project resolution** (`resolve_project_key`): a named project (key or plain name like "BAN") is matched against the live project list; unknown → falls back to `JIRA_PROJECT_KEY` (never 400s), and cannot create projects/spaces. **Assignee resolution** (`_resolve_assignee_email`): explicit email → `<@U…>` mention (`users.info`) → **bare name** ("Jyoti") matched against the workspace member list (`users.list`, unique exact-or-first-name) → email → Jira `user/search` → `accountId`; no unique match ⇒ filed unassigned and the reply says so. No follow-up questions. Bot IDs excluded from mention extraction. |
-| `loop/action_items.py` | Detects commitments ("John will fix X by Friday") on observe-only channel messages (regex gate → focused model extraction of owner/task/deadline), stores them in the `action_items` table, and feeds ambient deadline nudges. |
-| `loop/memory_capture.py` | **Passive long-term memory capture** (off unless `CAIRN_MEMORY_CAPTURE=on`). On channel messages Loop only observes, a regex gate (`looks_memorable`, decisions + reused action-item patterns) → a focused model call distills a durable decision/commitment into one sentence and saves it to the long-term store with provenance — so recall works without an explicit `@Loop` turn (gaps B/I/K). |
-| `loop/storage.py` | `SqliteMemoryStore` (default backend) — Strands `MemoryStore` over local SQLite. **Episodic + provenance-stamped:** every memory auto-tagged with who/where/when (from `RequestState`); recall is **FTS5** (BM25 + recency) with a sanitized query + `LIKE` fallback; exact-content dedup on write. |
-| `loop/vector_store.py` | `HybridMemoryStore` (opt-in, `CAIRN_MEMORY_BACKEND=hybrid`) — same contract over **libSQL/Turso**: fuses FTS5 (BM25) + native vector search (`F32_BLOB`/`vector_top_k`) via **Reciprocal Rank Fusion** for hybrid Agentic-RAG recall. Same provenance + dedup. |
-| `loop/embeddings.py` | Pluggable text embedder for the hybrid store: `fastembed` (local, no key — default), `minimax`/`openai` (hosted), `hashing` (dep-free fallback). |
-| `loop/__init__.py` | Version marker (`0.3.1`). |
+| `cairn/main.py` | Entrypoint (`loop` script). Loads `.env`, configures logging, calls `slack_app.start()`. |
+| `cairn/slack_app.py` | Slack Bolt app(s) over **Socket Mode**. `_discover_apps()` + `start()` run **one or many** apps concurrently (one socket thread each). Three handlers (`app_mention`, `message`, `/loop`); `message` tracks all channels + answers DMs (incl. file uploads). `_collect_files()` downloads attachments (`files:read`). Wraps every call in `observability.record` (entrypoint = `<app>:<kind>`). |
+| `cairn/agent.py` | Builds **one Strands `Agent` per app** (`get_agent(app_name)`), each with its own system prompt via `_system_prompt()` (base + optional `CAIRN_PERSONA_<NAME>`). `run(prompt, attachments=…, app_name=…)` builds a string or multimodal content list via `_build_message()`, returns an `AgentRun` (text + telemetry), manages the per-request `RequestState`. `_split_reasoning()` strips MiniMax-M3's inline `<think>…</think>` deliberation out of the reply (it arrives as plain text, not an Anthropic reasoning block) → Slack sees the clean answer, the thinking goes to the `reasoning` column. |
+| `cairn/context.py` | `RequestState` + a `ContextVar` so the hooks can attribute steps and enforce per-request limits across one `run()`. |
+| `cairn/tracing.py` | `LoopTracer` (Strands `HookProvider`) + `reasoning_callback`: logs & persists each model call, tool call, and reasoning chunk. |
+| `cairn/guardrails.py` | `Guardrails` (`HookProvider`): enforcing tool-call limits via `cancel_tool`, with per-rule env toggles. |
+| `cairn/observability.py` | `Interaction` + `record()` (edge telemetry), `record_step()`, `record_eval()`; owns the `interactions` / `steps` / `eval_results` tables. The `interactions` row now also stores the per-turn `reasoning` (stripped `<think>`) and `response` (the reply we sent) — added by an idempotent column migration. |
+| `cairn/eval.py` | `cairn-eval` CLI: runs `evals/golden.json` through the real agent and scores tool selection + reply expectations. |
+| `cairn/ambient.py` | **Ambient (proactive PM) mode** — off unless `CAIRN_AMBIENT=on`. `maybe_start(configs)` (called from `slack_app.start()`) spawns one daemon thread per app. Each tick discovers stalled threads (pluggable `Discoverer`; default `discover_from_interactions` = threads the app touched whose last non-ambient activity is older than `CAIRN_AMBIENT_STALE_HOURS`), re-checks real staleness via `conversations_replies`, skips recently-nudged threads, runs the agent (optionally on `CAIRN_AMBIENT_MODEL`) to draft a nudge or `NOOP`, and posts via the **per-app** Web client (avoids the bare-`SLACK_BOT_TOKEN` identity of `slack_send_message`). Wrapped in `obs.record` with entrypoint `<app>:ambient`. Ambient never stages/creates Jira tickets — it may only *suggest* one in words; a human must ask. |
+| `cairn/jira_tool.py` | Native Jira tools: `jira_stage_ticket` (saves to in-process `_pending` dict, returns confirmation text), `jira_create_issue` (REST API create), `jira_search_issues`. `_create_jira_issue_direct` is the non-tool version called by `slack_app.py` on confirmation. **Project resolution** (`resolve_project_key`): a named project (key or plain name like "BAN") is matched against the live project list; unknown → falls back to `JIRA_PROJECT_KEY` (never 400s), and cannot create projects/spaces. **Assignee resolution** (`_resolve_assignee_email`): explicit email → `<@U…>` mention (`users.info`) → **bare name** ("Jyoti") matched against the workspace member list (`users.list`, unique exact-or-first-name) → email → Jira `user/search` → `accountId`; no unique match ⇒ filed unassigned and the reply says so. No follow-up questions. Bot IDs excluded from mention extraction. |
+| `cairn/action_items.py` | Detects commitments ("John will fix X by Friday") on observe-only channel messages (regex gate → focused model extraction of owner/task/deadline), stores them in the `action_items` table, and feeds ambient deadline nudges. |
+| `cairn/memory_capture.py` | **Passive long-term memory capture** (off unless `CAIRN_MEMORY_CAPTURE=on`). On channel messages Cairn only observes, a regex gate (`looks_memorable`, decisions + reused action-item patterns) → a focused model call distills a durable decision/commitment into one sentence and saves it to the long-term store with provenance — so recall works without an explicit `@Cairn` turn (gaps B/I/K). |
+| `cairn/storage.py` | `SqliteMemoryStore` (default backend) — Strands `MemoryStore` over local SQLite. **Episodic + provenance-stamped:** every memory auto-tagged with who/where/when (from `RequestState`); recall is **FTS5** (BM25 + recency) with a sanitized query + `LIKE` fallback; exact-content dedup on write. |
+| `cairn/vector_store.py` | `HybridMemoryStore` (opt-in, `CAIRN_MEMORY_BACKEND=hybrid`) — same contract over **libSQL/Turso**: fuses FTS5 (BM25) + native vector search (`F32_BLOB`/`vector_top_k`) via **Reciprocal Rank Fusion** for hybrid Agentic-RAG recall. Same provenance + dedup. |
+| `cairn/embeddings.py` | Pluggable text embedder for the hybrid store: `fastembed` (local, no key — default), `minimax`/`openai` (hosted), `hashing` (dep-free fallback). |
+| `cairn/__init__.py` | Version marker (`0.3.1`). |
 
 ## Model provider — env-selected factory (no vendor lock-in)
 
 `agent._build_model()` is a **provider factory** chosen by `CAIRN_MODEL_PROVIDER`
-(default `anthropic`). This is Loop's core differentiator vs single-vendor Slack
+(default `anthropic`). This is Cairn's core differentiator vs single-vendor Slack
 agents: the brain is swappable by env, never hardcoded.
 
 - `anthropic` (default) — Strands `AnthropicModel` (the Anthropic SDK). Also serves
@@ -92,7 +92,7 @@ agents: the brain is swappable by env, never hardcoded.
   Bedrock (works out of the box; boto3 ships with strands). `ollama` — local /
   self-hosted (sovereign). `gemini` — Google Gemini.
 - Non-`anthropic` SDKs are **lazy-imported** (only required when selected); install
-  via `pip install "loop[providers]"`. Model id is provider-neutral via `CAIRN_MODEL`
+  via `pip install "cairn[providers]"`. Model id is provider-neutral via `CAIRN_MODEL`
   (falls back to `ANTHROPIC_MODEL`); response cap via `CAIRN_MAX_TOKENS` (def 2048).
 - **Model routing:** `_build_model(model_id)` / `get_agent(app, model_id)` /
   `run(..., model_id=…)` accept an override (cached under its own key) so ambient
@@ -106,14 +106,14 @@ truly env-only; OpenAI/Bedrock/etc. go through the factory branches above.
 ## Database (storage layer)
 
 **Engine:** local **SQLite** (`sqlite3` stdlib), file at `DATABASE_PATH`
-(default `./data/loop.db`). No external DB/service. WAL journal mode; a
+(default `./data/cairn.db`). No external DB/service. WAL journal mode; a
 `threading.Lock` guards writes because the connection is shared across the Bolt
 handler threads (`check_same_thread=False`).
 
 **Schema (tables):**
 
 ```sql
--- long-term memory (loop/storage.py) — episodic + provenance-stamped
+-- long-term memory (cairn/storage.py) — episodic + provenance-stamped
 CREATE TABLE memory_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     content TEXT NOT NULL,
@@ -126,7 +126,7 @@ CREATE TABLE memory_entries (
 CREATE VIRTUAL TABLE memory_fts USING fts5(
     content, content='memory_entries', content_rowid='id');
 
--- telemetry / data foundation (loop/observability.py)
+-- telemetry / data foundation (cairn/observability.py)
 CREATE TABLE interactions (             -- one row per Slack interaction (edge)
     id, request_id, ts, entrypoint, team, channel, channel_type, "user",
     thread_ts, prompt, model_id, input_tokens, output_tokens, total_tokens,
@@ -135,12 +135,12 @@ CREATE TABLE interactions (             -- one row per Slack interaction (edge)
     response );       -- the final reply text we sent back (auditable, was unstored)
 CREATE TABLE steps (                    -- one row per model call / tool call / reasoning / guardrail
     id, request_id, ts, seq, kind, name, detail, tokens, duration_ms, outcome );
-CREATE TABLE eval_results (             -- one row per golden case per loop-eval run
+CREATE TABLE eval_results (             -- one row per golden case per cairn-eval run
     id, run_id, ts, case_id, category, model_id, passed, latency_ms, tool_calls, reasons );
 ```
 
 All telemetry tables are opened on a separate connection from the memory store
-(rollback/`DELETE` journal mode — keeps `loop.db` self-contained + openable in
+(rollback/`DELETE` journal mode — keeps `cairn.db` self-contained + openable in
 external SQLite viewers; single process, so WAL concurrency isn't needed) and
 created/migrated lazily on first write.
 
@@ -165,7 +165,7 @@ created/migrated lazily on first write.
 **Memory backends (env `CAIRN_MEMORY_BACKEND`):**
 - `sqlite` (default) — FTS5 lexical recall, zero deps, no API key.
 - `hybrid` (aliases `libsql`/`turso`/`vector`) — libSQL/Turso **hybrid** recall:
-  FTS5 + semantic vectors fused with RRF (`loop/vector_store.py`); needs
+  FTS5 + semantic vectors fused with RRF (`cairn/vector_store.py`); needs
   `pip install -e ".[vector]"` + embeddings (`fastembed` local, no key by
   default). Verified live (memory add→recall through MiniMax M3). See
   `docs/vector-memory.md`.
@@ -221,18 +221,18 @@ servers that read credentials from env (like `mcp-atlassian`) returned zero tool
 
 - **Observability (Pillar 02):** every interaction emits a JSON telemetry line +
   an `interactions` row; every model call, tool call, and reasoning chunk emits a
-  `loop.trace` line + a `steps` row. `CAIRN_TRACE=off` silences logs (DB still
+  `cairn.trace` line + a `steps` row. `CAIRN_TRACE=off` silences logs (DB still
   written); `LOG_LEVEL=DEBUG` adds full reasoning + tool I/O. Logger names:
-  `loop.obs`, `loop.trace`, `loop.guard`.
+  `cairn.obs`, `cairn.trace`, `loop.guard`.
 - **Guardrails (Pillars 04/05):** `Guardrails` cancels a tool call before it runs
   when a per-request limit trips — max tool calls, repeated identical call, risky
   Slack method, or token budget — each independently toggled by env. Enforcing by
   default; the model receives the cancel reason and replies gracefully.
-- **Evaluation (Pillar 01):** `loop-eval` runs `evals/golden.json` through the
+- **Evaluation (Pillar 01):** `cairn-eval` runs `evals/golden.json` through the
   real agent, scores tool selection + reply content, prints a scorecard, persists
   `eval_results`, and exits non-zero on regression (CI gate).
 
-## What Loop does NOT have yet
+## What Cairn does NOT have yet
 
 No authn/authorization (allow-list of workspaces/users), no PII redaction before
 persistence, no rate limiting across requests, no thread/conversation history

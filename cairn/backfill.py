@@ -31,9 +31,9 @@ import sqlite3
 import time
 from typing import Any, Iterator
 
-from loop import conversation, memory_capture
+from cairn import conversation, memory_capture
 
-log = logging.getLogger("loop.backfill")
+log = logging.getLogger("cairn.backfill")
 
 # A run of consecutive channel messages counts as one conversation while the gap
 # between them stays under this. Slack has no marker for "this discussion ended",
@@ -43,7 +43,7 @@ _GAP_S = 30 * 60
 
 # ── state ────────────────────────────────────────────────────────────────────
 def _db() -> sqlite3.Connection:
-    path = os.environ.get("DATABASE_PATH", "./data/loop.db")
+    path = os.environ.get("DATABASE_PATH", "./data/cairn.db")
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.execute("""CREATE TABLE IF NOT EXISTS backfill_state (
@@ -222,7 +222,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.compact:
-        from loop.agent import _memory_store
+        from cairn.agent import _memory_store
         store = _memory_store()
         if not hasattr(store, "compact"):
             print("compaction needs the hybrid memory backend (CAIRN_MEMORY_BACKEND=hybrid)")
@@ -261,5 +261,5 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":  # python -m loop.backfill
+if __name__ == "__main__":  # python -m cairn.backfill
     raise SystemExit(main())

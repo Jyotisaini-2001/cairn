@@ -1,4 +1,4 @@
-"""Loop's Strands Agent.
+"""Cairn's Strands Agent.
 
 Built per the official Strands Agents README (sdk-python):
 
@@ -37,14 +37,15 @@ from strands.tools.mcp import MCPClient
 from strands_tools import calculator, slack, think
 from strands_tools.slack import slack_send_message
 
-from loop.jira_tool import jira_create_issue, jira_search_issues, jira_stage_ticket
+from cairn.decisions import decision_log
+from cairn.jira_tool import jira_create_issue, jira_search_issues, jira_stage_ticket
 
-from loop import context as reqctx
-from loop.guardrails import Guardrails
-from loop.storage import SqliteMemoryStore
-from loop.tracing import LoopTracer, reasoning_callback
+from cairn import context as reqctx
+from cairn.guardrails import Guardrails
+from cairn.storage import SqliteMemoryStore
+from cairn.tracing import LoopTracer, reasoning_callback
 
-log = logging.getLogger("loop.agent")
+log = logging.getLogger("cairn.agent")
 
 _agents: dict[str, Agent] = {}
 
@@ -114,13 +115,13 @@ def _openai_style_client_args() -> dict[str, Any]:
 def _build_model(model_id: str | None = None) -> Any:
     """Construct the Strands model for the configured provider.
 
-    This is Loop's USP made real: the provider is **env-selected** rather than
+    This is Cairn's USP made real: the provider is **env-selected** rather than
     hardcoded, so the same agent can run on Anthropic, MiniMax, OpenAI, Bedrock,
     a LiteLLM multi-provider gateway, or a local Ollama model — no vendor lock-in.
     ``CAIRN_MODEL_PROVIDER`` picks the backend (default ``anthropic``, which keeps
     the existing MiniMax-M3-via-Anthropic-compatible-endpoint path unchanged).
     Provider SDKs beyond ``anthropic`` are lazy-imported so they're only required
-    when actually selected (install via ``pip install "loop[providers]"``).
+    when actually selected (install via ``pip install "cairn[providers]"``).
 
     ``model_id`` overrides the env model id — used by the ambient loop for cheap
     background scanning (``CAIRN_AMBIENT_MODEL``).
@@ -229,6 +230,10 @@ Tools you have:
 - calculator — math
 - jira_stage_ticket — stage a Jira ticket for confirmation (CALL THIS for bugs)
 - jira_create_issue — create a Jira issue directly (skip confirmation)
+- decision_log — LIST the team's recorded decisions with their sources. Use it
+  for questions about the record ("what did we decide last week", "recent
+  decisions"), not for "why did we pick X" — that is answered from the memories
+  already in your context.
 - jira_search_issues — search/list Jira issues; pass "bugs" to list all open bugs, "recent"/"all" to list everything, or a text phrase to search
 - fetch (MCP) — fetch any public URL and return its content as text; use this for live pricing, docs, news, or any web lookup
 
@@ -291,7 +296,7 @@ def _mcp_clients(app_name: str | None = None) -> list[MCPClient]:
     for spec in specs:
         parts = shlex.split(spec)
         command, args = parts[0], parts[1:]
-        log.info("loop: MCP server registered (command=%s args=%s)", command, args)
+        log.info("cairn: MCP server registered (command=%s args=%s)", command, args)
         # Capture command/args in closure to avoid late-binding over loop variable
         clients.append(
             MCPClient(lambda c=command, a=args: stdio_client(StdioServerParameters(command=c, args=a, env=env)))
@@ -313,11 +318,14 @@ def _mcp_clients(app_name: str | None = None) -> list[MCPClient]:
 # the MemoryManager, and they are the product.
 _TOOL_GROUPS: dict[str, Any] = {
     "slack": lambda: [slack, slack_send_message],
+    # The decision log is part of the product, not an optional extra — but it is
+    # still a switch, so a lean deployment can drop it.
+    "decisions": lambda: [decision_log],
     "jira": lambda: [jira_stage_ticket, jira_create_issue, jira_search_issues],
     "calculator": lambda: [calculator],
     "think": lambda: [think],
 }
-_DEFAULT_TOOLS = "slack,jira,calculator"
+_DEFAULT_TOOLS = "slack,jira,calculator,decisions"
 
 
 def _enabled_tools() -> list[Any]:
@@ -386,12 +394,12 @@ def _memory_store() -> Any:
 
     Default ``sqlite`` = the FTS5 + provenance store (no deps, no key). ``hybrid``
     (aliases: ``libsql``/``turso``/``vector``) = the libSQL/Turso hybrid store
-    (FTS5 + semantic vectors, RRF-fused); needs ``pip install "loop[vector]"`` and
+    (FTS5 + semantic vectors, RRF-fused); needs ``pip install "cairn[vector]"`` and
     raises a clear error if missing, so the choice is explicit.
     """
     backend = os.environ.get("CAIRN_MEMORY_BACKEND", "sqlite").strip().lower()
     if backend in {"hybrid", "libsql", "turso", "vector"}:
-        from loop.vector_store import HybridMemoryStore  # noqa: PLC0415 (optional path)
+        from cairn.vector_store import HybridMemoryStore  # noqa: PLC0415 (optional path)
 
         log.info("memory backend: libsql/turso hybrid (FTS5 + semantic vectors, RRF-fused)")
         return HybridMemoryStore()
@@ -602,7 +610,7 @@ def get_agent(app_name: str | None = None, model_id: str | None = None) -> Agent
     if agent is None:
         agent = _build_agent(app_name, model_id)
         _agents[key] = agent
-        log.info("loop agent initialised (app=%s)", key)
+        log.info("cairn agent initialised (app=%s)", key)
     return agent
 
 

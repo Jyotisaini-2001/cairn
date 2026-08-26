@@ -1,4 +1,4 @@
-"""Loop entrypoint. Loads .env, configures logging, starts the Slack app."""
+"""Cairn entrypoint. Loads .env, configures logging, starts the Slack app."""
 from __future__ import annotations
 
 import atexit
@@ -12,7 +12,7 @@ def _flush_dbs() -> None:
     """Checkpoint all SQLite WAL files on clean exit so the next start finds a
     consistent DB regardless of how the process stops (Ctrl+C, SIGTERM, etc.)."""
     import sqlite3
-    from loop.storage import DEFAULT_DB_PATH
+    from cairn.storage import DEFAULT_DB_PATH
 
     path = os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
     for db_path in (path, path.replace(".db", "_vec.db")):
@@ -35,7 +35,7 @@ def main() -> None:
 
     atexit.register(_flush_dbs)
 
-    from loop import slack_app
+    from cairn import slack_app
 
     slack_app.start()
 

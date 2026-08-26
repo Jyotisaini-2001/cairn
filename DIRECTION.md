@@ -5,7 +5,7 @@ is the tie-breaker when a future change could pull it sideways. Read it with
 `architecture.md` (how it's wired) and `progress.md` (where it stands)._
 
 **Status of the name:** adopted. Slack app, agent identity and env vars are
-`Cairn`; the `loop/` Python package still carries the old name (internal only).
+`Cairn`; the `cairn/` Python package still carries the old name (internal only).
 
 ---
 
@@ -190,7 +190,7 @@ _Two bugs surfaced while doing this, both worth more than the features:_
   thread parent; pinned by a regression test.
 
 **Phase 1 — capture what is actually there** — ✅ **done 2026-08-26** _(verified live)_
-- [x] **Shared conversation reader** (`loop/conversation.py`) — context, capture
+- [x] **Shared conversation reader** (`cairn/conversation.py`) — context, capture
       and backfill all read Slack through one path, so a captured memory always
       corresponds to a conversation Cairn could also have read. Added the
       **channel-context fallback**: a mention that is not in a thread now gets
@@ -238,10 +238,25 @@ _Still open from Phase 1:_ near-duplicate memories. Backfilling a decision that
 was also saved live produces a re-phrased near-copy; exact-content dedup does not
 catch it. Belongs with the supersession work in Phase 3.
 
-**Phase 2 — answer questions properly** _(gaps 5, 6)_
-- A cited question-answering surface, not just memories injected into chat
-- Scope as an explicit policy
-- Deeper recall for log-style questions
+**Phase 2 — answer questions properly** — ✅ **done 2026-08-26**
+- [x] **A decision log** (`cairn/decisions.py`). Recall was a side effect of
+      chatting — a handful of memories injected before a reply. That is right for
+      "why did we pick Postgres?" and the wrong shape for "what did we decide
+      last week", which wants a *list*, ordered, with sources, and longer than a
+      prompt can afford to carry. This reads the store directly, so it is
+      deterministic: it cannot invent an entry, and it still works when the model
+      quota is spent.
+- [x] **Time windows.** "last week", "past 3 days", "this month" — questions
+      semantic search cannot answer, because relevance has nothing to do with
+      recency.
+- [x] **Two ways in.** A `decision_log` tool the agent can call, and `/cairn`
+      (with `/loop` kept as an alias), which answers straight from the log when
+      the ask is about the record — no model call at all.
+- [x] **Scope as an explicit policy** (`context.scope_policy` / `scope_for`).
+      The log is queried outside an agent turn, so it needed the scope rules
+      without a live request — otherwise a slash command becomes a way around
+      channel isolation.
+
 
 **Phase 3 — the moat** — ✅ **done 2026-08-26** _(verified live)_
 - [x] **Near-duplicate collapsing.** The same decision saved live and then again
@@ -297,8 +312,23 @@ three calls (3× the cost), deterministic rules for common shapes ("same subject
 same unit, different number" needs no model call), and a human confirmation step
 before retiring a decision.
 
-**Phase 4 — earn proactivity back**
-- Surface a relevant past decision when a debate restarts. Same engine, pushed.
+**Phase 4 — earn proactivity back** — ✅ **done 2026-08-26**
+- [x] **Resurfacing** (`cairn/resurface.py`, `CAIRN_RESURFACE=off` by default).
+      When someone re-opens a question the record already answers, Cairn posts
+      the decision and its source in-thread. Same engine as recall, pushed
+      instead of pulled — which is exactly why it was deferred until the
+      knowledge layer existed.
+- [x] **Three rules keep it from becoming the reason someone mutes Cairn:**
+      it fires only on a *question* (a decision being made is capture's job, and
+      answering that with "you already decided this" would be both wrong and
+      irritating); only on a strong match against a **live** decision, at a
+      tighter threshold than recall's, because there is no model judging the
+      output — the unprompted message *is* the output; and **once** per decision
+      per channel per cooldown, since re-raising the same reminder is precisely
+      how a helpful bot becomes a muted one.
+- [x] **The wording offers rather than polices** — "This came up before — …",
+      not "you already decided this". A team may be revisiting a decision
+      deliberately, and Cairn is not the referee.
 
 Jira is reframed throughout: **file a ticket that cites the decision it came from.**
 
@@ -325,14 +355,14 @@ Jira is reframed throughout: **file a ticket that cites the decision it came fro
 |---|---|---|
 | Model | **MiniMax M3**, unchanged | Provider stays env-selected. `CAIRN_MODEL_PROVIDER` already supports anthropic / litellm / openai / bedrock / ollama / gemini. |
 | Storage | **SQLite (+ hybrid libSQL vectors)**, unchanged | Correct for this scale; zero ops. Postgres+pgvector or DynamoDB/OpenSearch are the enterprise path, deferred. |
-| Model benchmarking | Open task | Run `loop-eval` across MiniMax / Kimi / Qwen via one OpenRouter key and record the numbers here. |
+| Model benchmarking | Open task | Run `cairn-eval` across MiniMax / Kimi / Qwen via one OpenRouter key and record the numbers here. |
 
 ---
 
 ## 8. Open decisions
 
 - [x] Adopt the name `Cairn`? — **yes.** Slack app, `SYSTEM_PROMPT` identity and
-      all 247 `LOOP_*` env vars are renamed. Still outstanding: the `loop/`
+      all 247 `CAIRN_*` env vars are renamed. Still outstanding: the `cairn/`
       package dir, `pyproject.toml`, the console script, `loop.*` logger
       prefixes, and the prose in README/architecture — one deliberate pass.
 - [x] Start with Phase 0 or Phase 1? — **Phase 0 first** (done 2026-08-26); its

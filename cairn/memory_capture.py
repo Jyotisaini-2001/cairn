@@ -1,13 +1,13 @@
 """Passive long-term memory capture from channel messages (gaps B / I / K).
 
-Today Loop only writes to long-term memory when the agent explicitly calls
-``add_memory`` during an ``@Loop`` turn — so a decision made in a channel Loop
+Today Cairn only writes to long-term memory when the agent explicitly calls
+``add_memory`` during an ``@Cairn`` turn — so a decision made in a channel Cairn
 merely *observes* is lost, and "what did we decide about X" later finds nothing.
 
 When ``CAIRN_MEMORY_CAPTURE=on`` this module distills observe-only channel messages
 that state a **decision** or a **commitment** into a self-contained sentence and
-saves it to Loop's long-term (vector) memory with provenance — so recall works
-even when nobody mentioned Loop. Off by default.
+saves it to Cairn's long-term (vector) memory with provenance — so recall works
+even when nobody mentioned Cairn. Off by default.
 
 Kept cheap and quiet with a two-stage filter, mirroring ``action_items.py``:
   1. a regex gate (no model call on chit-chat), then
@@ -26,10 +26,10 @@ import re
 import time
 from typing import Any
 
-from loop.action_items import looks_like_action_item
-from loop.llm import extract_json
+from cairn.action_items import looks_like_action_item
+from cairn.llm import extract_json
 
-log = logging.getLogger("loop.memcapture")
+log = logging.getLogger("cairn.memcapture")
 
 # Decision / agreement phrasing. Commitments ("X will fix Y") are covered by
 # reusing action_items.looks_like_action_item, so this only adds the decision side.
@@ -118,7 +118,7 @@ def _store() -> Any:
     backend selector as the agent so captures land where recall reads from."""
     global _store_inst
     if _store_inst is None:
-        from loop.agent import _memory_store  # noqa: PLC0415 (avoid import cycle at module load)
+        from cairn.agent import _memory_store  # noqa: PLC0415 (avoid import cycle at module load)
 
         _store_inst = _memory_store()
     return _store_inst

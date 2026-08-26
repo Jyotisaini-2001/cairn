@@ -10,7 +10,7 @@ from __future__ import annotations
 
 
 def test_strips_paired_think_block() -> None:
-    from loop.agent import _split_reasoning
+    from cairn.agent import _split_reasoning
 
     raw = "<think>Let me check the tools. Yes, both exist.</think>Filed KAN-8. Done."
     clean, thinking = _split_reasoning(raw)
@@ -20,7 +20,7 @@ def test_strips_paired_think_block() -> None:
 
 
 def test_strips_multiple_and_thinking_alias() -> None:
-    from loop.agent import _split_reasoning
+    from cairn.agent import _split_reasoning
 
     raw = "<thinking>a</thinking>Hello <think>b</think>world"
     clean, thinking = _split_reasoning(raw)
@@ -29,7 +29,7 @@ def test_strips_multiple_and_thinking_alias() -> None:
 
 
 def test_unclosed_open_tag_is_all_reasoning() -> None:
-    from loop.agent import _split_reasoning
+    from cairn.agent import _split_reasoning
 
     # max_tokens cut off the close tag: everything after <think> is reasoning.
     raw = "Here's the plan.\n<think>now I'm deliberating and it got cut off"
@@ -39,7 +39,7 @@ def test_unclosed_open_tag_is_all_reasoning() -> None:
 
 
 def test_stray_close_tag() -> None:
-    from loop.agent import _split_reasoning
+    from cairn.agent import _split_reasoning
 
     raw = "reasoning without an open</think>Actual answer."
     clean, thinking = _split_reasoning(raw)
@@ -48,7 +48,7 @@ def test_stray_close_tag() -> None:
 
 
 def test_plain_text_untouched() -> None:
-    from loop.agent import _split_reasoning
+    from cairn.agent import _split_reasoning
 
     clean, thinking = _split_reasoning("Just a normal reply.")
     assert clean == "Just a normal reply."
@@ -56,14 +56,14 @@ def test_plain_text_untouched() -> None:
 
 
 def test_empty() -> None:
-    from loop.agent import _split_reasoning
+    from cairn.agent import _split_reasoning
 
     assert _split_reasoning("") == ("", "")
 
 
 def test_thinking_params_default_on() -> None:
     import os
-    from loop.agent import _thinking_params
+    from cairn.agent import _thinking_params
 
     os.environ.pop("CAIRN_THINKING_BUDGET", None)
     got = _thinking_params()
@@ -72,7 +72,7 @@ def test_thinking_params_default_on() -> None:
 
 def test_thinking_params_off_and_clamped() -> None:
     import os
-    from loop.agent import _thinking_params
+    from cairn.agent import _thinking_params
 
     os.environ["CAIRN_THINKING_BUDGET"] = "off"
     assert _thinking_params() == {}

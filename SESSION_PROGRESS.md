@@ -5,9 +5,9 @@
 **If you are a fresh session picking this up: read this file top to bottom, then `progress.md`.**
 
 ## Decisions taken this session
-1. **Base = `development` HEAD, NOT 663e9a2.** The post-663e9a2 breakage (loop.db
+1. **Base = `development` HEAD, NOT 663e9a2.** The post-663e9a2 breakage (cairn.db
    unopenable, readonly-DB telemetry, WAL confusion) was *environmental*, not code:
-   `data/loop.db` + `data/loop_vec.db` are **tracked in git** (deliberate `.gitignore`
+   `data/cairn.db` + `data/cairn_vec.db` are **tracked in git** (deliberate `.gitignore`
    exceptions), so every checkout/stash swaps the DB inode under a live process →
    wedged connections → "readonly database" → the whole WAL saga. HEAD also contains
    fixes worth keeping (name-first assignee, <think> stripping, dedup refactor).
@@ -36,18 +36,18 @@
   assignee fallback: unresolved → unassigned + visible flag).
 - `.env` header says tokens were shared in chat → **rotate all tokens before
   marketplace submission**.
-- Committed `data/loop.db` is a stale snapshot (schema even lacks the
+- Committed `data/cairn.db` is a stale snapshot (schema even lacks the
   reasoning/response columns — they're added by runtime migration).
 - No stale `loop` processes were running at session start (checked ps).
 
 ## 🚨 CRITICAL DISCOVERY — a GHOST PROCESS is answering Slack events
 A second `loop` instance built from ~663e9a2-era code (staging message has no
-`Project:` line — matches `git show 096f67e:loop/slack_app.py`) is connected to
+`Project:` line — matches `git show 096f67e:cairn/slack_app.py`) is connected to
 the SAME Rasputin app token from ANOTHER machine (not this one: lsof/ps clean).
 Slack Socket Mode round-robins events across connections, so ~half of all live
 tests hit pre-fix code. **This explains every "the fix didn't work" report from
 previous sessions** (assignee misrouting, thinking leaks, etc.).
-**Fix: regenerate the Rasputin app-level token (and Loop's too) at
+**Fix: regenerate the Rasputin app-level token (and Cairn's too) at
 api.slack.com/apps → Basic Information → App-Level Tokens, update `.env`.**
 The ghost then can't reconnect. Until that happens, any live Slack test may be
 answered by the ghost — check the local log for the request id to attribute.
@@ -74,7 +74,7 @@ The arc, in order — each stage kept the "one Strands agent is the only brain" 
 1. **MVP: a Slack memory layer** (60ee78d→6ea173f) — MCP, Block Kit, follow-ups;
    heuristics replaced by a real LLM agent loop.
 2. **Strands-native rewrite** (84010f0) — Python, one agent, tools = slack/memory.
-3. **Production harness v0.3** (2bc7194→663e9a2) — multi-app (Loop+Rasputin), file/
+3. **Production harness v0.3** (2bc7194→663e9a2) — multi-app (Cairn+Rasputin), file/
    multimodal input, telemetry (interactions+steps), guardrails, golden evals.
    Framing: the 5 Pillars of Production AI; observability+evals before features.
 4. **Memory as the moat** (b168c5b→62bed64, v0.4) — episodic provenance-stamped
@@ -155,7 +155,7 @@ visible flag. To change the reporter, use a token from a different Jira account.
   Jira-inert fix) — clean up in Jira at leisure.
 
 ## Round 2 (same day, user follow-ups) — all verified
-- **Thinking persisted per interaction:** confirmed in loop.db — every row since
+- **Thinking persisted per interaction:** confirmed in cairn.db — every row since
   the fix has reasoning (445/246/1316 chars); row 16 was the pre-fix control.
 - **Ambient verified live:** daemon scanned #new-channel, correctly NOOPed a
   resolved thread (telemetry row `rasputin:ambient`, reasoning captured). Note:
@@ -163,7 +163,7 @@ visible flag. To change the reporter, use a token from a different Jira account.
   re-nudge guard for that thread. Posting path: live-verified 2026-07-01 + 5
   unit tests. To demo a nudge: human asks an unanswered question, stale=0.
 - **Passive capture → vector DB verified + ENABLED:** capture() distilled a
-  decision into loop_vec.db row 7 (kind=decision, provenance, embedding).
+  decision into cairn_vec.db row 7 (kind=decision, provenance, embedding).
   `CAIRN_MEMORY_CAPTURE=on` now set in .env. Before this, ONLY agent turns
   (@mention/DM/assistant) wrote memory; ambient never writes memory.
 - **Slack screenshot:** the 4 bug-report messages in #new-channel were this
@@ -176,12 +176,12 @@ visible flag. To change the reporter, use a token from a different Jira account.
   never read by code; 13/13 required vars set in .env.
 - **Showcase pages repo-tracked:** docs/presentation.html (new keynote-scroll
   design for the stage) + docs/field-guide.html (knowledge base). README gained
-  Showcase links, mermaid runtime flowchart + loop.db ER diagram; stale
-  "committed loop.db" claim fixed; users:read.email scope documented.
+  Showcase links, mermaid runtime flowchart + cairn.db ER diagram; stale
+  "committed cairn.db" claim fixed; users:read.email scope documented.
   Artifacts: presentation https://claude.ai/code/artifact/41a07752-4981-4697-9f47-2149fbe354cb ·
   field guide https://claude.ai/code/artifact/592bb186-c99b-4dbd-a952-299e1287c7a8
 - **No loop process left running** (test processes stopped). Start: `loop`
-  (or `python -m loop.main`). Stop: Ctrl+C, or `pkill -f "loop.main"`.
+  (or `python -m cairn.main`). Stop: Ctrl+C, or `pkill -f "cairn.main"`.
 
 ## Log
 - (start) Investigated repo, read jira_tool/observability/agent/tracing/storage,

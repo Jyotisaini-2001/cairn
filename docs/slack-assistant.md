@@ -8,7 +8,7 @@
 ## Why this exists (hackathon)
 
 The hackathon requires using at least one of: **Slack AI capabilities**, **MCP
-server integration**, or **Real-Time Search API**. Loop already has **MCP server
+server integration**, or **Real-Time Search API**. Cairn already has **MCP server
 integration** (`CAIRN_MCP_SERVERS`), so it qualifies today. This branch adds a
 clean, first-class **Slack AI capabilities** claim: it serves Slack's native
 **Assistant** container (the AI side panel / app DM) — `assistant_thread_started`
@@ -17,7 +17,7 @@ the same single Strands agent (same memory, guardrails, observability).
 
 ## What it does
 
-`loop/slack_app.py` gains `_attach_assistant()`, wired via Bolt's `Assistant`
+`cairn/slack_app.py` gains `_attach_assistant()`, wired via Bolt's `Assistant`
 class when `CAIRN_SLACK_ASSISTANT=on`:
 
 - **thread_started** → greets the user and sets suggested prompts (recall a

@@ -12,7 +12,7 @@ import tempfile
 
 import pytest
 
-from loop import backfill
+from cairn import backfill
 
 
 @pytest.fixture(autouse=True)

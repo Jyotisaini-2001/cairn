@@ -1,4 +1,4 @@
-"""Pluggable text embeddings for Loop's optional vector memory.
+"""Pluggable text embeddings for Cairn's optional vector memory.
 
 EXPERIMENTAL — lives on the `feat/vector-memory-turso` branch, not on `main`.
 
@@ -6,7 +6,7 @@ Answer to "do I need an embedding-model API key?": **no, not necessarily.**
 
   • ``fastembed`` (default) — runs locally in-process via ONNX Runtime. No API
     key, no GPU, no server. Default model ``BAAI/bge-small-en-v1.5`` (384-dim).
-    `pip install "loop[vector]"` pulls it in (downloads the model once, ~90 MB).
+    `pip install "cairn[vector]"` pulls it in (downloads the model once, ~90 MB).
   • ``minimax`` — reuses your MiniMax account but a DIFFERENT endpoint
     (``/v1/embeddings``, model ``embo-01``); needs ``MINIMAX_API_KEY`` +
     ``MINIMAX_GROUP_ID``. (The chat model uses the Anthropic-compatible endpoint;
@@ -30,7 +30,7 @@ import re
 import urllib.request
 from typing import Protocol
 
-log = logging.getLogger("loop.embeddings")
+log = logging.getLogger("cairn.embeddings")
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 

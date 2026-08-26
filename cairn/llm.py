@@ -1,4 +1,4 @@
-"""One place for the small "ask the model for JSON" calls Loop's deterministic
+"""One place for the small "ask the model for JSON" calls Cairn's deterministic
 detectors make — bug extraction, action items, passive memory capture.
 
 These bypass the Strands agent on purpose (MiniMax M3 doesn't reliably call tools
@@ -13,9 +13,9 @@ import logging
 import os
 import re
 
-log = logging.getLogger("loop.llm")
+log = logging.getLogger("cairn.llm")
 
-# Loop's own bot user ids, skipped when picking a human @mention out of a message.
+# Cairn's own bot user ids, skipped when picking a human @mention out of a message.
 # Self-populated at startup: slack_app.start() calls register_bot_id() with each
 # app's auth.test user_id, so this works in ANY workspace (nothing hardcoded).
 # CAIRN_BOT_USER_IDS (comma-separated) can seed extra ids for odd setups.
@@ -63,7 +63,7 @@ def _agent():
     if _json_agent is None:
         from strands import Agent  # noqa: PLC0415
 
-        from loop.agent import _build_model  # noqa: PLC0415 (avoids an import cycle)
+        from cairn.agent import _build_model  # noqa: PLC0415 (avoids an import cycle)
 
         model = _build_model(os.environ.get("CAIRN_EXTRACT_MODEL") or None)
         # Temperature 0: always take the most likely token instead of sampling.

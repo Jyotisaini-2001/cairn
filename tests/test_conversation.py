@@ -1,4 +1,4 @@
-"""The shared conversation reader (loop/conversation.py).
+"""The shared conversation reader (cairn/conversation.py).
 
 Context, capture and backfill all read Slack the same way through this module,
 so these cover normalisation and the thread-vs-channel routing once, for all
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from loop import conversation as conv
+from cairn import conversation as conv
 
 
 class FakeClient:

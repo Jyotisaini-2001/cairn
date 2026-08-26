@@ -13,7 +13,7 @@ import os
 
 
 def test_gate_matches_decisions_and_commitments() -> None:
-    from loop.memory_capture import looks_memorable
+    from cairn.memory_capture import looks_memorable
 
     assert looks_memorable("we decided to go with Postgres")
     assert looks_memorable("let's use Redis for the cache")
@@ -22,7 +22,7 @@ def test_gate_matches_decisions_and_commitments() -> None:
 
 
 def test_gate_rejects_chitchat() -> None:
-    from loop.memory_capture import looks_memorable
+    from cairn.memory_capture import looks_memorable
 
     assert not looks_memorable("lol nice one")
     assert not looks_memorable("what time is standup?")
@@ -30,7 +30,7 @@ def test_gate_rejects_chitchat() -> None:
 
 
 def test_capture_disabled_is_noop() -> None:
-    import loop.memory_capture as mc
+    import cairn.memory_capture as mc
 
     os.environ["CAIRN_MEMORY_CAPTURE"] = "off"
     calls: list = []
@@ -41,7 +41,7 @@ def test_capture_disabled_is_noop() -> None:
 
 
 def test_capture_saves_with_provenance() -> None:
-    import loop.memory_capture as mc
+    import cairn.memory_capture as mc
 
     os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     saved: list = []
@@ -62,7 +62,7 @@ def test_capture_saves_with_provenance() -> None:
 
 
 def test_capture_skips_when_gate_fails_no_llm() -> None:
-    import loop.memory_capture as mc
+    import cairn.memory_capture as mc
 
     os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     called: list = []
@@ -73,7 +73,7 @@ def test_capture_skips_when_gate_fails_no_llm() -> None:
 
 
 def test_capture_skips_when_not_memorable() -> None:
-    import loop.memory_capture as mc
+    import cairn.memory_capture as mc
 
     os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     saved: list = []
@@ -104,7 +104,7 @@ if __name__ == "__main__":
 # ------------------------------------------------- provider-agnostic extraction
 def test_extract_json_tolerates_fences_and_prose():
     """Models wrap JSON in different ways; the parser must survive all of them."""
-    from loop.llm import _parse_json
+    from cairn.llm import _parse_json
 
     assert _parse_json('{"a": 1}') == {"a": 1}
     assert _parse_json('```json\n{"a": 1}\n```') == {"a": 1}
@@ -118,7 +118,7 @@ def test_extraction_uses_the_provider_factory(monkeypatch):
     every passive capture failed with a 401 the moment the project moved to
     Gemini — while its own docstring claimed it followed the configured provider.
     """
-    from loop import llm
+    from cairn import llm
 
     built = {}
     monkeypatch.setattr(llm, "_json_agent", None)
@@ -134,7 +134,7 @@ def test_extraction_uses_the_provider_factory(monkeypatch):
 
     import strands
     monkeypatch.setattr(strands, "Agent", FakeAgent)
-    monkeypatch.setattr("loop.agent._build_model", lambda mid=None: f"model:{mid}")
+    monkeypatch.setattr("cairn.agent._build_model", lambda mid=None: f"model:{mid}")
 
     assert llm.extract_json("anything") == {"ok": True}
     assert built["model"] == "model:None"      # came from the factory, not httpx

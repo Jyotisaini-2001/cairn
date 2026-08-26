@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import os
 
-from loop.agent import _format_thread, _with_context
-from loop.slack_app import _thread_history, _thread_limit
+from cairn.agent import _format_thread, _with_context
+from cairn.slack_app import _thread_history, _thread_limit
 
 
 class FakeClient:
@@ -127,7 +127,7 @@ def test_context_envelope_carries_the_threads_parent_not_the_reply():
     returns just that one message, so context silently came back empty and the
     model burned ~25k extra tokens calling the Slack API to compensate.
     """
-    from loop.slack_app import _ctx
+    from cairn.slack_app import _ctx
 
     reply = {"user": "U1", "channel": "C1", "ts": "222.2", "thread_ts": "111.1"}
     ctx = _ctx(reply)

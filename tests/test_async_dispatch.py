@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import threading
 
-from loop import slack_app
+from cairn import slack_app
 
 
 def setup_function(_f):

@@ -31,7 +31,7 @@ class RequestState:
     author: str | None = None       # Slack user id of the asker
     channel: str | None = None      # Slack channel id
     team: str | None = None         # Slack team/workspace id
-    source: str | None = None       # which Loop app handled it (e.g. "rasputin")
+    source: str | None = None       # which Cairn app handled it (e.g. "rasputin")
     thread_ts: str | None = None    # thread the message belongs to
 
     # counters / accumulators, mutated by the tracing + guardrail hooks
@@ -86,7 +86,7 @@ def memory_scope() -> tuple[str, str] | None:
 
     This is what makes channel-isolated memory possible (Claude-Tag-style): a fact
     saved in #support is not recalled in #data-team. Resolution order:
-    ``CAIRN_MEMORY_SCOPE_<SOURCE>`` (per-app override, SOURCE = the Loop app name)
+    ``CAIRN_MEMORY_SCOPE_<SOURCE>`` (per-app override, SOURCE = the Cairn app name)
     → ``CAIRN_MEMORY_SCOPE`` → default ``channel``. Values:
 
     * ``channel`` (default) — scope to the originating channel.
@@ -100,14 +100,30 @@ def memory_scope() -> tuple[str, str] | None:
     state = current()
     if state is None:
         return None
-    source = (state.source or "").upper()
-    scope = (
-        os.environ.get(f"CAIRN_MEMORY_SCOPE_{source}")
-        or os.environ.get("CAIRN_MEMORY_SCOPE")
-        or "channel"
-    ).strip().lower()
+    return scope_for(state.channel, state.team, source=state.source)
+
+
+def scope_policy(source: str | None = None) -> str:
+    """The configured scope, as a word: ``channel`` | ``team`` | ``global``.
+
+    Made explicit so it can be read without an active request — the decision log
+    is queried outside an agent turn, and it must obey the same isolation the
+    agent does or a slash command becomes a way around it.
+    """
+    key = f"CAIRN_MEMORY_SCOPE_{(source or '').upper()}"
+    return (os.environ.get(key) or os.environ.get("CAIRN_MEMORY_SCOPE")
+            or "channel").strip().lower()
+
+
+def scope_for(channel: str | None, team: str | None = None, *,
+              source: str | None = None) -> tuple[str, str] | None:
+    """Resolve a scope filter from explicit values rather than the current
+    request. Returns ``None`` (no filter) for global scope, or when the column
+    the policy needs is missing — recall should never silently return nothing
+    just because provenance was absent."""
+    scope = scope_policy(source)
     if scope == "global":
         return None
     if scope == "team":
-        return ("team", state.team) if state.team else None
-    return ("channel", state.channel) if state.channel else None
+        return ("team", team) if team else None
+    return ("channel", channel) if channel else None

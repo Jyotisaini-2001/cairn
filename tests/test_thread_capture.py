@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from loop import memory_capture as mc
+from cairn import memory_capture as mc
 
 
 @pytest.fixture(autouse=True)

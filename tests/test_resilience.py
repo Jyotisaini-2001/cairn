@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from loop.agent import TransientModelError, _invoke, _is_transient
+from cairn.agent import TransientModelError, _invoke, _is_transient
 
 
 class Flaky:
@@ -118,14 +118,14 @@ import pytest as _pytest  # noqa: E402
     ("just a 429, no hint", None),
 ])
 def test_provider_retry_hint_is_parsed(text, expected):
-    from loop.agent import _retry_hint_s
+    from cairn.agent import _retry_hint_s
     assert _retry_hint_s(RuntimeError(text)) == expected
 
 
 def test_hint_is_preferred_over_exponential_backoff(monkeypatch):
     """Backing off 0.6s for a window the provider says is 29s just burns the
     remaining attempts — which is exactly what happened on Gemini's free tier."""
-    from loop import agent as ag
+    from cairn import agent as ag
 
     waited = []
     monkeypatch.setattr(ag.time, "sleep", waited.append)
@@ -139,7 +139,7 @@ def test_hint_is_preferred_over_exponential_backoff(monkeypatch):
 
 
 def test_absurd_hint_is_capped(monkeypatch):
-    from loop import agent as ag
+    from cairn import agent as ag
 
     waited = []
     monkeypatch.setattr(ag.time, "sleep", waited.append)
@@ -157,7 +157,7 @@ def test_a_daily_quota_is_not_retried(monkeypatch):
     """A per-minute limit clears in seconds; a per-DAY quota does not clear
     today — and Gemini still attaches a ~60s retryDelay to it. An eval run spent
     a minute per case honouring that before failing anyway."""
-    from loop import agent as ag
+    from cairn import agent as ag
 
     waited = []
     monkeypatch.setattr(ag.time, "sleep", waited.append)
@@ -174,7 +174,7 @@ def test_a_daily_quota_is_not_retried(monkeypatch):
 
 
 def test_a_per_minute_limit_is_still_retried(monkeypatch):
-    from loop import agent as ag
+    from cairn import agent as ag
 
     monkeypatch.setattr(ag.time, "sleep", lambda _s: None)
     os.environ["CAIRN_MODEL_RETRIES"] = "2"
@@ -186,5 +186,5 @@ def test_a_per_minute_limit_is_still_retried(monkeypatch):
 
 def test_quota_error_is_still_a_transient_error():
     """Subclassing keeps every existing handler working."""
-    from loop.agent import QuotaExhaustedError, TransientModelError
+    from cairn.agent import QuotaExhaustedError, TransientModelError
     assert issubclass(QuotaExhaustedError, TransientModelError)

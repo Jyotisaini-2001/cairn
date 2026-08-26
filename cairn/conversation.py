@@ -25,7 +25,7 @@ import os
 import re
 from typing import Any
 
-log = logging.getLogger("loop.conversation")
+log = logging.getLogger("cairn.conversation")
 
 _MENTION_RE = re.compile(r"<@[A-Z0-9]+>")
 

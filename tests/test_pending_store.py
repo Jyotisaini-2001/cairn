@@ -11,7 +11,7 @@ import tempfile
 
 import pytest
 
-from loop import jira_tool
+from cairn import jira_tool
 
 
 @pytest.fixture(autouse=True)

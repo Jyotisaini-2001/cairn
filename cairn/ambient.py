@@ -3,7 +3,7 @@
 Off by default (`CAIRN_AMBIENT=off`). When on, each Slack app gets a daemon thread
 that periodically looks for threads which have **gone quiet without resolution**
 and, if a nudge is warranted, posts a concise follow-up — like a PM keeping work
-moving. This is Loop's take on Claude Tag's "ambient mode", but provider-agnostic
+moving. This is Cairn's take on Claude Tag's "ambient mode", but provider-agnostic
 and able to run its background scanning on a cheaper model (`CAIRN_AMBIENT_MODEL`).
 
 Design (deliberately minimal — no new brain, no intent parser):
@@ -35,18 +35,18 @@ from typing import Any, Callable
 
 from slack_sdk import WebClient
 
-from loop import observability as obs
-from loop.agent import run as run_agent
-from loop.storage import DEFAULT_DB_PATH
+from cairn import observability as obs
+from cairn.agent import run as run_agent
+from cairn.storage import DEFAULT_DB_PATH
 
-log = logging.getLogger("loop.ambient")
+log = logging.getLogger("cairn.ambient")
 
 
 def _safe_connect(path: str) -> sqlite3.Connection:
     """Open a short-lived read connection to the telemetry DB.
 
     Deliberately does NOT run integrity_check or rename/recreate the file: that
-    auto-recovery churned the DB's inode under concurrent access and made loop.db
+    auto-recovery churned the DB's inode under concurrent access and made cairn.db
     un-openable in external viewers (and risked destroying good data on a
     transient busy). Callers already close this connection after their query.
     """
@@ -301,7 +301,7 @@ def _process_thread(cfg_name: str, client: WebClient, channel: str, thread_ts: s
 
 def _nudge_action_items(cfg_name: str, client: WebClient) -> None:
     """Post deadline nudges for due/overdue action items tracked by this app."""
-    from loop.action_items import get_due_items, mark_nudged
+    from cairn.action_items import get_due_items, mark_nudged
 
     nudge_hours = _int_env("CAIRN_ACTION_ITEM_NUDGE_HOURS", 24)
     items = get_due_items(nudge_hours=nudge_hours)

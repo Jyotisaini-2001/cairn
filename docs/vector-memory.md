@@ -6,7 +6,7 @@
 
 ## What it adds
 
-`loop/vector_store.py` (`HybridMemoryStore`) fuses **two** retrievers over one
+`cairn/vector_store.py` (`HybridMemoryStore`) fuses **two** retrievers over one
 [libSQL / Turso](https://github.com/tursodatabase) database:
 
 - **Lexical** — FTS5 `MATCH` ranked by BM25 (exact words, names, ids, numbers).
@@ -32,7 +32,7 @@ transaction), and it can later sync to Turso cloud with no code change.
 
 **No — not by default.** libSQL/Turso *stores and searches* vectors but does
 **not generate** them, so the semantic half needs an embedding model. It's
-pluggable (`loop/embeddings.py`) and defaults to a local one:
+pluggable (`cairn/embeddings.py`) and defaults to a local one:
 
 | `CAIRN_EMBEDDINGS` | Key? | Notes |
 |---|---|---|
@@ -53,7 +53,7 @@ pip install -e ".[vector]"         # libsql-experimental + fastembed
 ```dotenv
 CAIRN_MEMORY_BACKEND=hybrid         # aliases: libsql / turso / vector
 CAIRN_EMBEDDINGS=fastembed          # local, no API key
-CAIRN_VECTOR_DB_PATH=./data/loop_vec.db
+CAIRN_VECTOR_DB_PATH=./data/cairn_vec.db
 # Optional — sync the embedded file to Turso cloud:
 # TURSO_DATABASE_URL=libsql://<db>.turso.io
 # TURSO_AUTH_TOKEN=...
@@ -70,6 +70,6 @@ python -m tests.test_vector_memory
   (`tests/test_vector_memory.py`), **and** a live MiniMax M3 agent turn that saved
   then semantically recalled with provenance citation.
 - ⚠️ The vector column dimension is fixed at create time by the embedder. Switching
-  embedding models (different dim) needs a fresh `loop_vec.db`.
+  embedding models (different dim) needs a fresh `cairn_vec.db`.
 - ⚠️ Hosted embeddings (`minimax`/`openai`) add per-op latency and share RPM; the
   local `fastembed` default avoids both.

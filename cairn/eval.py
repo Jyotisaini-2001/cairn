@@ -1,4 +1,4 @@
-"""Golden-set evaluation runner for Loop (Pillar 01 — evaluation).
+"""Golden-set evaluation runner for Cairn (Pillar 01 — evaluation).
 
 Runs the golden dataset (`evals/golden.json`) through the *real* agent
 (`agent.run`, i.e. real MiniMax/Anthropic calls) and scores each case against
@@ -14,11 +14,11 @@ mem-recall-*) rely on file order within a single run. Pass --use-real-memory to
 run against the live store instead.
 
 Usage:
-    loop-eval                 # run the whole golden set
-    loop-eval --limit 5       # first 5 cases (smoke test)
-    loop-eval --case calc-multiply mem-recall-standup
-    loop-eval --json          # machine-readable summary to stdout
-    loop-eval --use-real-memory   # don't isolate memory (default: throwaway DB)
+    cairn-eval                 # run the whole golden set
+    cairn-eval --limit 5       # first 5 cases (smoke test)
+    cairn-eval --case calc-multiply mem-recall-standup
+    cairn-eval --json          # machine-readable summary to stdout
+    cairn-eval --use-real-memory   # don't isolate memory (default: throwaway DB)
 
 Each case in golden.json:
     { "id", "category", "prompt", "context?": {user, channel, channel_type},
@@ -71,7 +71,7 @@ def _score(run, expect: dict) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
-    parser = argparse.ArgumentParser(prog="loop-eval", description="Run Loop's golden eval set.")
+    parser = argparse.ArgumentParser(prog="cairn-eval", description="Run Cairn's golden eval set.")
     parser.add_argument("--dataset", default=os.environ.get("CAIRN_EVAL_DATASET", str(DATASET)))
     parser.add_argument("--limit", type=int, default=None, help="run only the first N cases")
     parser.add_argument("--case", nargs="+", default=None, help="run only these case ids")
@@ -100,13 +100,13 @@ def main(argv: list[str] | None = None) -> int:
     if not args.use_real_memory:
         import tempfile
 
-        mem_dir = tempfile.mkdtemp(prefix="loop-eval-mem-")
+        mem_dir = tempfile.mkdtemp(prefix="cairn-eval-mem-")
         os.environ["CAIRN_MEMORY_DB_PATH"] = os.path.join(mem_dir, "memory.db")
         os.environ["CAIRN_VECTOR_DB_PATH"] = os.path.join(mem_dir, "memory_vec.db")
 
     # Import after load_dotenv (+ memory env) so the model/store env is in place.
-    from loop import observability as obs
-    from loop.agent import run as run_agent
+    from cairn import observability as obs
+    from cairn.agent import run as run_agent
 
     cases = _load(Path(args.dataset))
     if args.case:
@@ -120,14 +120,14 @@ def main(argv: list[str] | None = None) -> int:
     # ANTHROPIC_MODEL / the built-in default, and reading one env var recorded
     # "?" for every run the moment the project moved off Anthropic — which
     # defeats the point, since comparing models is what this dataset is for.
-    from loop.agent import _model_id as _resolve_model  # noqa: PLC0415
+    from cairn.agent import _model_id as _resolve_model  # noqa: PLC0415
     model_id = _resolve_model()
     results: list[dict] = []
 
     if not args.json:
-        print(f"\nLoop eval · run {run_id} · model {model_id} · {len(cases)} cases\n" + "─" * 64)
+        print(f"\nCairn eval · run {run_id} · model {model_id} · {len(cases)} cases\n" + "─" * 64)
 
-    from loop import agent as agent_mod
+    from cairn import agent as agent_mod
 
     for c in cases:
         expect = c.get("expect", {})

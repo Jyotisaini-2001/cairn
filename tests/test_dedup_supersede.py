@@ -17,7 +17,7 @@ import pytest
 
 libsql = pytest.importorskip("libsql_experimental")
 
-from loop import vector_store as vs  # noqa: E402
+from cairn import vector_store as vs  # noqa: E402
 
 
 class StubEmbedder:
@@ -136,7 +136,7 @@ def test_complementary_facts_are_both_kept(store, monkeypatch):
 def test_unclear_judgement_keeps_both(store, monkeypatch):
     """Wrongly retiring a live decision is worse than carrying a stale row, so a
     failed or unparseable classification falls back to "independent"."""
-    from loop import llm
+    from cairn import llm
     monkeypatch.setattr(llm, "extract_json", lambda *a, **k: None)   # model down
     _add(store, "review_24h cap review at 24 hours")
     _add(store, "review_4h moved review to 4 hours")
@@ -165,7 +165,7 @@ def test_classifier_falls_back_to_independent(monkeypatch):
     """Distance cannot separate "same fact re-phrased" (0.12–0.15 on real
     vectors) from "the answer changed" (0.179), so a model call arbitrates. Any
     failure must land on the safe side."""
-    from loop import llm
+    from cairn import llm
 
     for reply in (None, {}, {"relation": "nonsense"}, {"other": "shape"}):
         monkeypatch.setattr(llm, "extract_json", lambda *a, _r=reply, **k: _r)
@@ -174,7 +174,7 @@ def test_classifier_falls_back_to_independent(monkeypatch):
 
 @pytest.mark.parametrize("relation", ["duplicate", "replaces", "independent"])
 def test_classifier_passes_through_valid_verdicts(monkeypatch, relation):
-    from loop import llm
+    from cairn import llm
     monkeypatch.setattr(llm, "extract_json", lambda *a, **k: {"relation": relation})
     assert vs._classify("new", "old") == relation
 

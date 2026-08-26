@@ -1,13 +1,13 @@
 """Slack Bolt app(s).
 
-Loop can run as one OR several Slack apps in a single process (see `_discover_apps`
+Cairn can run as one OR several Slack apps in a single process (see `_discover_apps`
 + `start`): each configured app gets its own Bolt App, Socket Mode connection, and
 agent persona, but they all share the same code, memory store, and telemetry. So
-`@Loop` and `@Rasputin_Loop` can coexist and even behave differently.
+`@Cairn` and a second app can coexist and even behave differently.
 
 Each app has three handlers — all route straight to that app's Strands agent:
-  - `app_mention` : user @mentions Loop in a channel → run() → reply in thread
-  - `message`     : tracks every message Loop can see (channel id/type/user in
+  - `app_mention` : user @mentions Cairn in a channel → run() → reply in thread
+  - `message`     : tracks every message Cairn can see (channel id/type/user in
                     the logs); answers it ONLY when it's a direct message (DM).
                     This is also what silences Bolt's "unhandled request" 404s
                     for `message` events.
@@ -34,18 +34,21 @@ from dataclasses import dataclass
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from loop import conversation
-from loop import observability as obs
-from loop.agent import QuotaExhaustedError, TransientModelError
-from loop.agent import run as run_agent, remember as remember_memory
-from loop.jira_tool import (
+from cairn import context as reqctx
+from cairn import conversation
+from cairn import decisions
+from cairn import resurface
+from cairn import observability as obs
+from cairn.agent import QuotaExhaustedError, TransientModelError
+from cairn.agent import run as run_agent, remember as remember_memory
+from cairn.jira_tool import (
     has_pending, pop_pending, _create_jira_issue_direct, _pending,
     default_project_key, _dedup_check, resolve_project_key,
     _update_issue_direct,
 )
-from loop.action_items import looks_like_action_item, extract_action_item, save_action_item
-from loop.llm import extract_json, first_human_mention
-from loop import memory_capture
+from cairn.action_items import looks_like_action_item, extract_action_item, save_action_item
+from cairn.llm import extract_json, first_human_mention
+from cairn import memory_capture
 
 # Matches a confirmation *prefix* — the message may carry extra instructions
 # after it (e.g. "yes, assign this to ishan"). Only consulted when a staged
@@ -215,7 +218,7 @@ def _clean_bug_text(text: str) -> str:
     cleaned = _INSTRUCTION_TAIL_RE.sub("", text).strip(" ,.;:-—")
     return cleaned or text.strip()
 
-log = logging.getLogger("loop.slack")
+log = logging.getLogger("cairn.slack")
 
 _MENTION_RE = re.compile(r"<@[^>]+>")
 
@@ -344,7 +347,7 @@ def _dispatch(fn, *args, **kwargs) -> None:
 
 
 # ── Conversation context ─────────────────────────────────────────────────────
-# The fetch/normalise logic lives in `loop.conversation` so that context,
+# The fetch/normalise logic lives in `cairn.conversation` so that context,
 # capture and backfill all read a conversation the same way. These stay as thin
 # wrappers because the flags are read per-request (tests flip them at runtime).
 def _thread_context_enabled() -> bool:
@@ -366,6 +369,24 @@ def _thread_history(client, channel: str, thread_ts: str, current_ts: str,
     log.info("thread context: %d turn(s) (thread_ts=%s current_ts=%s)",
              len(turns), thread_ts, current_ts)
     return turns
+
+
+def _maybe_resurface(event: dict, say, cfg: "AppConfig") -> None:
+    """Post a past decision when a settled question is re-opened.
+
+    In-thread, so it sits beside the question rather than interrupting the
+    channel. Silent when the record has nothing that answers it, which is most
+    of the time — that is the point.
+    """
+    note = resurface.check(
+        _strip_mentions(event.get("text", "") or ""),
+        channel=event.get("channel"), team=event.get("team"), source=cfg.name)
+    if not note:
+        return
+    try:
+        say(text=note, thread_ts=event.get("thread_ts") or event.get("ts"))
+    except Exception:  # noqa: BLE001
+        log.exception("[%s] could not post resurfaced decision", cfg.name)
 
 
 def _capture_conversation(client, event: dict, cfg: "AppConfig") -> None:
@@ -445,7 +466,7 @@ def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachmen
 
 @dataclass
 class AppConfig:
-    """One Slack app Loop runs as: a short name + its bot/app token pair."""
+    """One Slack app Cairn runs as: a short name + its bot/app token pair."""
 
     name: str
     bot_token: str
@@ -461,7 +482,7 @@ def _discover_apps() -> list[AppConfig]:
           e.g. SLACK_BOT_TOKEN_LOOP/SLACK_APP_TOKEN_LOOP and
                SLACK_BOT_TOKEN_RASPUTIN/SLACK_APP_TOKEN_RASPUTIN  → two apps.
       • Bare pair (back-compat):  SLACK_BOT_TOKEN + SLACK_APP_TOKEN  → one app,
-          named by SLACK_APP_NAME (default "loop").
+          named by SLACK_APP_NAME (default "cairn").
     Each app gets its own Bolt App + Socket Mode connection in `start()`, and its
     own agent persona (CAIRN_PERSONA_<NAME>).
     """
@@ -474,7 +495,7 @@ def _discover_apps() -> list[AppConfig]:
         elif key.startswith("SLACK_APP_TOKEN_"):
             pairs.setdefault(key[len("SLACK_APP_TOKEN_"):].lower(), {})["app"] = val
     if os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_APP_TOKEN"):
-        name = (os.environ.get("SLACK_APP_NAME") or "loop").lower()
+        name = (os.environ.get("SLACK_APP_NAME") or "cairn").lower()
         slot = pairs.setdefault(name, {})
         slot.setdefault("bot", os.environ["SLACK_BOT_TOKEN"])
         slot.setdefault("app", os.environ["SLACK_APP_TOKEN"])
@@ -640,10 +661,10 @@ def _build_app(cfg: AppConfig) -> App:
 
     @app.event("message")
     def on_message(event, say, client, logger):
-        # Tracking + DM support. We log EVERY message Loop receives so each
+        # Tracking + DM support. We log EVERY message Cairn receives so each
         # channel it can see is visible in the logs, but we only *answer* DMs.
         # Channel messages stay observe-only — @mention / /loop are how you
-        # invoke Loop in a channel. (Registering this handler is also what stops
+        # invoke Cairn in a channel. (Registering this handler is also what stops
         # Bolt's 404 "unhandled request" warnings for `message` events.)
         if event.get("bot_id"):
             return  # ignore our own messages (avoids loops)
@@ -678,6 +699,11 @@ def _build_app(cfg: AppConfig) -> App:
                     and memory_capture.enabled()
                     and memory_capture.looks_memorable(text)):
                 _dispatch(_capture_conversation, client, event, cfg)
+            # Proactivity, earned (CAIRN_RESURFACE=off by default): if someone
+            # re-opens a question the record already answers, offer the decision
+            # and its source. Same engine as recall, pushed instead of pulled.
+            elif not event.get("bot_id") and resurface.enabled():
+                _dispatch(_maybe_resurface, event, say, cfg)
             return  # observe-only (channel chatter) — not a DM to Cairn
         if "<@" in raw:
             return  # a mention inside a DM: let the app_mention handler take it
@@ -698,10 +724,20 @@ def _build_app(cfg: AppConfig) -> App:
                   attachments=attachments, app_name=cfg.name,
                   bot_user_id=cfg.bot_user_id)
 
-    @app.command("/loop")
-    def on_loop(ack, respond, command):
+    def _slash(ack, respond, command):
+        # The slash command answers straight from the decision log when the ask
+        # is about the record ("decisions", "what did we decide last week"). That
+        # path is deterministic — a listing read from the store, with sources —
+        # which costs nothing, cannot hallucinate, and works when the model
+        # quota is spent. Anything else goes to the agent.
         ack()
-        text = (command.get("text") or "").strip() or "Give me a digest of recent memory."
+        text = (command.get("text") or "").strip()
+        if not text or _LOG_REQUEST_RE.search(text):
+            scope = None
+            if (cid := command.get("channel_id")):
+                scope = reqctx.scope_for(cid, command.get("team_id"))
+            respond(decisions.log_decisions(text, scope=scope))
+            return
         ix = obs.Interaction(
             entrypoint=f"{cfg.name}:slash",
             team=command.get("team_id"),
@@ -720,9 +756,21 @@ def _build_app(cfg: AppConfig) -> App:
             log.exception("[%s] slash command failed rid=%s", cfg.name, ix.request_id)
             respond(f":warning: Something went wrong: {err}")
 
+    # `/cairn` is the name; `/loop` stays registered so an app installed with the
+    # old slash command keeps working.
+    app.command("/cairn")(_slash)
+    app.command("/loop")(_slash)
+
     if _assistant_enabled():
         _attach_assistant(app, cfg)
     return app
+
+
+# Asking *about the record* rather than *from* it — these go to the decision log,
+# not the agent.
+_LOG_REQUEST_RE = re.compile(
+    r"\b(decisions?|decision log|what did we (decide|agree)|what have we "
+    r"(decided|agreed)|recap|digest|log)\b", re.IGNORECASE)
 
 
 def _ctx(event: dict) -> dict:
@@ -776,7 +824,7 @@ def _attach_assistant(app: "App", cfg: "AppConfig") -> None:
 
     @assistant.thread_started
     def _started(say, set_suggested_prompts, logger):
-        say(":wave: Hi! I'm *Loop*. Ask me to recall a decision, summarize a channel, or remember something.")
+        say(":wave: Hi! I'm *Cairn*. Ask me to recall a decision, summarize a channel, or remember something.")
         try:
             set_suggested_prompts(prompts=_SUGGESTED_PROMPTS, title="Try one of these:")
         except Exception:  # noqa: BLE001
@@ -845,7 +893,7 @@ def start() -> None:  # pragma: no cover
             "No Slack apps configured. Set SLACK_BOT_TOKEN + SLACK_APP_TOKEN, and/or "
             "SLACK_BOT_TOKEN_<NAME> + SLACK_APP_TOKEN_<NAME> pairs."
         )
-    from loop.llm import register_bot_id
+    from cairn.llm import register_bot_id
 
     for cfg in configs:
         app = _build_app(cfg)
@@ -853,15 +901,15 @@ def start() -> None:  # pragma: no cover
             auth = app.client.auth_test()
             cfg.bot_user_id = auth.get("user_id") or ""
             register_bot_id(auth.get("user_id"))
-            log.info("loop: app %r is bot user %s (%s)", cfg.name, auth.get("user_id"), auth.get("user"))
+            log.info("cairn: app %r is bot user %s (%s)", cfg.name, auth.get("user_id"), auth.get("user"))
         except Exception:  # noqa: BLE001 — identity lookup is best-effort
-            log.warning("loop: auth.test failed for app %r; bot-mention filtering may miss it", cfg.name)
+            log.warning("cairn: auth.test failed for app %r; bot-mention filtering may miss it", cfg.name)
         handler = SocketModeHandler(app, cfg.app_token)
         handler.connect()  # non-blocking: opens this app's socket on a background thread
-        log.info("loop: Slack app %r connected (socket mode)", cfg.name)
-    log.info("loop: %d app(s) running: %s", len(configs), ", ".join(c.name for c in configs))
+        log.info("cairn: Slack app %r connected (socket mode)", cfg.name)
+    log.info("cairn: %d app(s) running: %s", len(configs), ", ".join(c.name for c in configs))
     # Ambient (proactive PM) mode — off unless CAIRN_AMBIENT=on; one daemon per app.
-    from loop import ambient  # noqa: PLC0415 (optional path; keeps import cost off the default)
+    from cairn import ambient  # noqa: PLC0415 (optional path; keeps import cost off the default)
 
     ambient.maybe_start(configs)
     threading.Event().wait()  # block forever; each app runs in its own background thread

@@ -1,7 +1,7 @@
 [project]
-name = "loop"
+name = "cairn"
 version = "0.4.0"
-description = "Loop — a Slack-native AI agent built on Strands"
+description = "Cairn — organisational memory for Slack, built on Strands"
 requires-python = ">=3.10"
 dependencies = [
     "strands-agents>=1.44.0",
@@ -36,15 +36,15 @@ providers = [
 [project.scripts]
 # `cairn` is the name; `loop`/`loop-eval` stay as aliases so existing muscle
 # memory and any scripts keep working until the package rename lands.
-cairn = "loop.main:main"
-cairn-backfill = "loop.backfill:main"
-cairn-eval = "loop.eval:main"
-loop = "loop.main:main"
-loop-eval = "loop.eval:main"
+cairn = "cairn.main:main"
+cairn-backfill = "cairn.backfill:main"
+cairn-eval = "cairn.eval:main"
+loop = "cairn.main:main"
+loop-eval = "cairn.eval:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["loop"]
+packages = ["cairn"]

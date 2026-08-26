@@ -1,4 +1,4 @@
-"""Native Jira tool for Loop — creates and searches issues via the Jira REST API.
+"""Native Jira tool for Cairn — creates and searches issues via the Jira REST API.
 
 Loaded as a first-class Strands tool so MiniMax M3 reliably calls it (MCP tools
 are available but M3 doesn't consistently invoke them from persona instructions).
@@ -17,9 +17,9 @@ from typing import Any
 import requests
 from strands import tool
 
-from loop import context as reqctx
+from cairn import context as reqctx
 
-log = logging.getLogger("loop.jira")
+log = logging.getLogger("cairn.jira")
 
 # Pending tickets keyed by thread_ts. Populated by jira_stage_ticket, consumed by
 # slack_app when the user confirms with "yes".
@@ -45,7 +45,7 @@ class _PendingStore:
         if self._conn is not None:
             return self._conn
         try:
-            path = os.environ.get("DATABASE_PATH", "./data/loop.db")
+            path = os.environ.get("DATABASE_PATH", "./data/cairn.db")
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
             conn = sqlite3.connect(path, check_same_thread=False)
             conn.execute("""CREATE TABLE IF NOT EXISTS pending_tickets (
@@ -56,7 +56,7 @@ class _PendingStore:
             self._conn = conn
             return conn
         except Exception as err:  # noqa: BLE001
-            log.warning("loop.jira: pending store unavailable (%s); staying in-memory", err)
+            log.warning("cairn.jira: pending store unavailable (%s); staying in-memory", err)
             return None
 
     def _expire(self, conn: sqlite3.Connection) -> None:
@@ -74,7 +74,7 @@ class _PendingStore:
                 (thread_ts, json.dumps(ticket), time.time()))
             conn.commit()
         except Exception:  # noqa: BLE001
-            log.exception("loop.jira: failed to persist staged ticket")
+            log.exception("cairn.jira: failed to persist staged ticket")
 
     def __contains__(self, thread_ts: object) -> bool:
         return self.get(str(thread_ts)) is not None
@@ -90,7 +90,7 @@ class _PendingStore:
                 (thread_ts,)).fetchone()
             return json.loads(row[0]) if row else None
         except Exception:  # noqa: BLE001
-            log.exception("loop.jira: failed to read staged ticket")
+            log.exception("cairn.jira: failed to read staged ticket")
             return None
 
     def pop(self, thread_ts: str, default: Any = None) -> Any:
@@ -103,7 +103,7 @@ class _PendingStore:
                 conn.execute("DELETE FROM pending_tickets WHERE thread_ts=?", (thread_ts,))
                 conn.commit()
             except Exception:  # noqa: BLE001
-                log.exception("loop.jira: failed to clear staged ticket")
+                log.exception("cairn.jira: failed to clear staged ticket")
         return ticket
 
 
@@ -179,7 +179,7 @@ def _dedup_check(summary: str) -> str | None:
         if issues:
             return issues[0]["key"]
     except Exception as e:
-        log.warning("loop.jira: dedup check failed: %s", e)
+        log.warning("cairn.jira: dedup check failed: %s", e)
     return None
 
 
@@ -232,7 +232,7 @@ def _create_issue(
         if account_id:
             fields["assignee"] = {"accountId": account_id}
         else:
-            log.warning("loop.jira: assignee %s not found in Jira, leaving unassigned", assignee_email)
+            log.warning("cairn.jira: assignee %s not found in Jira, leaving unassigned", assignee_email)
 
     try:
         resp = requests.post(
@@ -246,17 +246,17 @@ def _create_issue(
         key = resp.json()["key"]
         url = f"{base_url}/browse/{key}"
         assignee_note, unassigned_note = _assignee_notes(fields, assignee_email, requested_assignee)
-        log.info("loop.jira: created issue %s%s priority=%s", key, assignee_note, priority)
+        log.info("cairn.jira: created issue %s%s priority=%s", key, assignee_note, priority)
         return (
             f"Created {issue_type} *{key}* · Priority: *{priority}*{assignee_note}: "
             f"{url}{unassigned_note}{_note_suffix(proj_note)}"
         )
     except requests.HTTPError as e:
         body = e.response.text if e.response is not None else ""
-        log.error("loop.jira: create failed: %s — %s", e, body)
+        log.error("cairn.jira: create failed: %s — %s", e, body)
         return f"Failed to create Jira issue: {e} — {body}"
     except Exception as e:
-        log.error("loop.jira: unexpected error: %s", e)
+        log.error("cairn.jira: unexpected error: %s", e)
         return f"Failed to create Jira issue: {e}"
 
 
@@ -343,14 +343,14 @@ def _update_issue_direct(
             data=json.dumps({"fields": fields}), timeout=10,
         )
         resp.raise_for_status()
-        log.info("loop.jira: updated %s (%s)", issue_key, ", ".join(changed))
+        log.info("cairn.jira: updated %s (%s)", issue_key, ", ".join(changed))
         return f"Updated *{issue_key}*: {', '.join(changed)}{assignee_note} — {base_url}/browse/{issue_key}"
     except requests.HTTPError as e:
         body = e.response.text if e.response is not None else ""
-        log.error("loop.jira: update failed: %s — %s", e, body)
+        log.error("cairn.jira: update failed: %s — %s", e, body)
         return f"Couldn't update {issue_key}: {e} — {body}"
     except Exception as e:
-        log.error("loop.jira: unexpected error updating issue: %s", e)
+        log.error("cairn.jira: unexpected error updating issue: %s", e)
         return f"Couldn't update {issue_key}: {e}"
 
 
@@ -407,7 +407,7 @@ def _slack_email_from_user_id(user_id: str) -> str | None:
         data = resp.json()
         return data.get("user", {}).get("profile", {}).get("email")
     except Exception as e:
-        log.warning("loop.jira: slack users.info failed for %s: %s", user_id, e)
+        log.warning("cairn.jira: slack users.info failed for %s: %s", user_id, e)
         return None
 
 
@@ -429,10 +429,10 @@ def _resolve_assignee(base_url: str, auth: requests.auth.HTTPBasicAuth, email: s
         resp.raise_for_status()
         users = resp.json()
         if users:
-            log.info("loop.jira: resolved assignee %s → %s", email, users[0]["accountId"])
+            log.info("cairn.jira: resolved assignee %s → %s", email, users[0]["accountId"])
             return users[0]["accountId"]
     except Exception as e:
-        log.warning("loop.jira: could not resolve assignee %s: %s", email, e)
+        log.warning("cairn.jira: could not resolve assignee %s: %s", email, e)
     return None
 
 
@@ -463,7 +463,7 @@ def _list_projects() -> list[tuple[str, str]]:
         _project_cache["ts"] = now
         return projects
     except Exception as e:
-        log.warning("loop.jira: project list failed: %s", e)
+        log.warning("cairn.jira: project list failed: %s", e)
         return _project_cache.get("projects") or []
 
 
@@ -527,7 +527,7 @@ def _slack_users() -> list[dict]:
         _users_cache["users"] = users
         _users_cache["ts"] = now
     except Exception as e:
-        log.warning("loop.jira: users.list failed: %s", e)
+        log.warning("cairn.jira: users.list failed: %s", e)
         return _users_cache.get("users") or []
     return users
 
@@ -583,7 +583,7 @@ def _resolve_assignee_email(
     if assignee_name:
         email = _slack_email_from_name(assignee_name)
         if email:
-            log.info("loop.jira: resolved assignee name %r → %s", assignee_name, email)
+            log.info("cairn.jira: resolved assignee name %r → %s", assignee_name, email)
             return email
     if assignee_email:
         return assignee_email
@@ -643,7 +643,7 @@ def jira_stage_ticket(
         "assignee_name": assignee_name,
         "project": project,
     }
-    log.info("loop.jira: staged ticket for thread %s: %s", thread_ts, summary)
+    log.info("cairn.jira: staged ticket for thread %s: %s", thread_ts, summary)
 
     assignee_display = slack_mention or assignee_name
     assignee_line = f"\n• *Assignee:* {assignee_display}" if assignee_display else ""
@@ -748,5 +748,5 @@ def jira_search_issues(project_key: str, query: str) -> str:
             lines.append(f"• {key} [{itype}/{status}] @{assignee}: {summary} — {url}")
         return "\n".join(lines)
     except Exception as e:
-        log.error("loop.jira: search failed: %s", e)
+        log.error("cairn.jira: search failed: %s", e)
         return f"Failed to search Jira: {e}"

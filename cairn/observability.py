@@ -1,4 +1,4 @@
-"""Observability for Loop — structured per-interaction telemetry.
+"""Observability for Cairn — structured per-interaction telemetry.
 
 This is the smallest real slice of the production roadmap's Pillar 02
 (observability) + Pillar 03 (data foundation) in `progress.md`: *see every
@@ -9,13 +9,13 @@ which:
   - assigns a short request id,
   - times the call end-to-end,
   - captures model id, token usage, tool calls, and outcome,
-  - emits ONE structured JSON log line on the ``loop.obs`` logger, and
+  - emits ONE structured JSON log line on the ``cairn.obs`` logger, and
   - persists a row to the ``interactions`` SQLite table.
 
 Nothing here changes the agent's behaviour — it only watches it. Query the
 data later with e.g.::
 
-    sqlite3 data/loop.db \\
+    sqlite3 data/cairn.db \\
       "SELECT entrypoint, channel, model_id, total_tokens, latency_ms, outcome
        FROM interactions ORDER BY id DESC LIMIT 20;"
 """
@@ -33,9 +33,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
-from loop.storage import DEFAULT_DB_PATH
+from cairn.storage import DEFAULT_DB_PATH
 
-log = logging.getLogger("loop.obs")
+log = logging.getLogger("cairn.obs")
 
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
@@ -51,7 +51,7 @@ def _db() -> sqlite3.Connection:
         _conn = sqlite3.connect(path, check_same_thread=False)
         # DELETE (rollback) journal, not WAL: a WAL-mode file can't be opened by
         # buffer/deserialize readers (VS Code SQLite viewer, sql.js) without its
-        # -wal sidecar and shows "malformed". Rollback keeps loop.db self-contained
+        # -wal sidecar and shows "malformed". Rollback keeps cairn.db self-contained
         # and externally openable. Single process, so WAL concurrency isn't needed.
         _conn.execute("PRAGMA journal_mode = DELETE")
         _conn.execute(
@@ -182,7 +182,7 @@ def _execute_write(sql: str, params: tuple) -> None:
 
 @dataclass
 class Interaction:
-    """One unit of work flowing through Loop. Created at the Slack edge with the
+    """One unit of work flowing through Cairn. Created at the Slack edge with the
     request envelope; metrics are filled in from the agent result via `from_run`."""
 
     entrypoint: str  # app_mention | dm | slash

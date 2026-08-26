@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from loop.agent import _DEFAULT_TOOLS, _TOOL_GROUPS, _enabled_tools
+from cairn.agent import _DEFAULT_TOOLS, _TOOL_GROUPS, _enabled_tools
 
 
 def _with(value: str | None):

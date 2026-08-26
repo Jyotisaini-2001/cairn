@@ -1,4 +1,4 @@
-"""Tests for Loop's ambient (proactive PM) mode — discovery, staleness, posting.
+"""Tests for Cairn's ambient (proactive PM) mode — discovery, staleness, posting.
 
 Runnable two ways:
     python -m tests.test_ambient
@@ -17,7 +17,7 @@ from pathlib import Path
 
 def _fresh_db() -> str:
     """Point telemetry at a clean DB and force observability to re-open it."""
-    import loop.observability as obs
+    import cairn.observability as obs
 
     path = str(Path(tempfile.mkdtemp()) / "obs.db")
     os.environ["DATABASE_PATH"] = path
@@ -27,7 +27,7 @@ def _fresh_db() -> str:
 
 
 def _seed_interaction(entrypoint: str, channel: str, thread_ts: str, ts: int, team: str = "T1") -> None:
-    import loop.observability as obs
+    import cairn.observability as obs
 
     obs._db().execute(
         'INSERT INTO interactions (request_id, ts, entrypoint, team, channel, thread_ts, prompt) '
@@ -68,7 +68,7 @@ class _FakeClient:
 
 
 def test_is_stale() -> None:
-    import loop.ambient as amb
+    import cairn.ambient as amb
 
     os.environ["CAIRN_AMBIENT_STALE_HOURS"] = "24"
     now = time.time()
@@ -78,7 +78,7 @@ def test_is_stale() -> None:
 
 
 def test_discover_from_interactions_finds_stale_only() -> None:
-    import loop.ambient as amb
+    import cairn.ambient as amb
 
     _fresh_db()
     now = int(time.time())
@@ -90,7 +90,7 @@ def test_discover_from_interactions_finds_stale_only() -> None:
 
 
 def test_discover_from_channels_skips_fresh_and_bots() -> None:
-    import loop.ambient as amb
+    import cairn.ambient as amb
 
     os.environ["CAIRN_AMBIENT_STALE_HOURS"] = "24"
     os.environ["CAIRN_AMBIENT_MAX_THREADS"] = "5"
@@ -108,7 +108,7 @@ def test_discover_from_channels_skips_fresh_and_bots() -> None:
 
 
 def test_process_thread_posts_then_renudge_guard(monkeypatch=None) -> None:
-    import loop.ambient as amb
+    import cairn.ambient as amb
 
     _fresh_db()
     os.environ["CAIRN_AMBIENT_STALE_HOURS"] = "24"
@@ -125,7 +125,7 @@ def test_process_thread_posts_then_renudge_guard(monkeypatch=None) -> None:
 
 
 def test_process_thread_noop_does_not_post() -> None:
-    import loop.ambient as amb
+    import cairn.ambient as amb
 
     _fresh_db()
     os.environ["CAIRN_AMBIENT_STALE_HOURS"] = "24"

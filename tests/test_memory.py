@@ -1,4 +1,4 @@
-"""Tests for Loop's episodic, provenance-stamped, FTS5-backed memory store.
+"""Tests for Cairn's episodic, provenance-stamped, FTS5-backed memory store.
 
 Runnable two ways:
     python -m tests.test_memory       # plain runner, exits non-zero on failure
@@ -14,9 +14,9 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-from loop import context as reqctx
-from loop.agent import _format_memories
-from loop.storage import SqliteMemoryStore, _fts_match
+from cairn import context as reqctx
+from cairn.agent import _format_memories
+from cairn.storage import SqliteMemoryStore, _fts_match
 from strands.memory import InjectionFormatContext
 
 
