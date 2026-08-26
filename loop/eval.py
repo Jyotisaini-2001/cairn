@@ -116,7 +116,12 @@ def main(argv: list[str] | None = None) -> int:
         cases = cases[: args.limit]
 
     run_id = uuid.uuid4().hex[:12]
-    model_id = os.environ.get("ANTHROPIC_MODEL", "?")
+    # Ask the agent, not the env: the provider factory resolves CAIRN_MODEL /
+    # ANTHROPIC_MODEL / the built-in default, and reading one env var recorded
+    # "?" for every run the moment the project moved off Anthropic — which
+    # defeats the point, since comparing models is what this dataset is for.
+    from loop.agent import _model_id as _resolve_model  # noqa: PLC0415
+    model_id = _resolve_model()
     results: list[dict] = []
 
     if not args.json:

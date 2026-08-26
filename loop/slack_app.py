@@ -36,7 +36,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from loop import conversation
 from loop import observability as obs
-from loop.agent import TransientModelError
+from loop.agent import QuotaExhaustedError, TransientModelError
 from loop.agent import run as run_agent, remember as remember_memory
 from loop.jira_tool import (
     has_pending, pop_pending, _create_jira_issue_direct, _pending,
@@ -423,6 +423,13 @@ def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachmen
             ix.from_run(run)
             say(text=run.text or "_(no response)_", thread_ts=thread_ts)
         _swap(client, channel, thread_ts, "white_check_mark")
+    except QuotaExhaustedError as err:
+        # Distinct from "busy": this one resets on a clock, so "try again in a
+        # moment" would be a lie.
+        logger.warning("quota exhausted rid=%s: %s", ix.request_id, str(err)[:200])
+        _swap(client, channel, thread_ts, "warning")
+        say(text=":warning: I've used up today's model quota — it resets on the "
+                 "provider's daily clock.", thread_ts=thread_ts)
     except TransientModelError as err:
         # Provider was rate-limited / overloaded and retries ran out. Say so in
         # words — silence (or a stack trace) is what this used to look like.

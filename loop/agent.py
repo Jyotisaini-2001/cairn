@@ -477,10 +477,32 @@ class TransientModelError(RuntimeError):
     again" instead of showing a stack trace."""
 
 
+class QuotaExhaustedError(TransientModelError):
+    """The account's quota is spent — a longer wait will not help today.
+
+    Subclasses TransientModelError so existing handling keeps working, but the
+    Slack layer can say something true ("today's quota") rather than "busy".""" 
+
+
+# Some 429s are not worth waiting for. A per-minute rate limit clears in seconds;
+# a per-DAY quota does not clear today, and Gemini still returns a ~60s
+# retryDelay with it. Honouring that burned a minute per case in an eval run
+# before failing anyway. Fail fast instead, so the caller sees the real problem.
+_EXHAUSTED_MARKERS = ("perday", "per day", "requestsperday", "daily limit",
+                      "quota exceeded for metric", "billing")
+
+
+def _is_exhausted(err: BaseException) -> bool:
+    text = f"{err}".lower().replace("_", "").replace("-", "")
+    return any(m.replace("_", "").replace("-", "") in text for m in _EXHAUSTED_MARKERS)
+
+
 def _is_transient(err: BaseException) -> bool:
     """Classify by message text, not exception type: each provider SDK raises its
     own class (anthropic.RateLimitError, google ClientError, httpx timeouts), and
     we deliberately do not import every SDK to catch them."""
+    if _is_exhausted(err):
+        return False        # waiting cannot help; surface it now
     text = f"{type(err).__name__} {err}".lower()
     return any(m in text for m in _RETRYABLE_MARKERS)
 
@@ -526,6 +548,9 @@ def _invoke(agent: Agent, message: Any) -> Any:
                 return agent(message)
         except BaseException as err:  # noqa: BLE001 - classified below, re-raised
             last = err
+            if _is_exhausted(err):
+                # Not worth a single retry: this resets on a clock, not a timer.
+                raise QuotaExhaustedError(str(err)) from err
             if not _is_transient(err):
                 raise
             if i == attempts - 1:

@@ -150,3 +150,41 @@ def test_absurd_hint_is_capped(monkeypatch):
         ag._invoke(Recorder(RuntimeError('429 retry in 600s')), "hi")
 
     assert waited and all(w <= 11 for w in waited), waited
+
+
+# --------------------------------------------------- quota vs rate limit
+def test_a_daily_quota_is_not_retried(monkeypatch):
+    """A per-minute limit clears in seconds; a per-DAY quota does not clear
+    today — and Gemini still attaches a ~60s retryDelay to it. An eval run spent
+    a minute per case honouring that before failing anyway."""
+    from loop import agent as ag
+
+    waited = []
+    monkeypatch.setattr(ag.time, "sleep", waited.append)
+    os.environ["CAIRN_MODEL_RETRIES"] = "3"
+
+    daily = RuntimeError(
+        '429 Quota exceeded for metric: generate_content_free_tier_requests, '
+        'quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier, retryDelay: "58s"')
+    a = Flaky(99, daily)
+    with pytest.raises(ag.QuotaExhaustedError):
+        ag._invoke(a, "hi")
+    assert a.calls == 1          # tried once
+    assert waited == []          # and never waited
+
+
+def test_a_per_minute_limit_is_still_retried(monkeypatch):
+    from loop import agent as ag
+
+    monkeypatch.setattr(ag.time, "sleep", lambda _s: None)
+    os.environ["CAIRN_MODEL_RETRIES"] = "2"
+    os.environ["CAIRN_MODEL_RETRY_BASE_MS"] = "1"
+    a = Flaky(1, RuntimeError("429 Too Many Requests. Please retry in 29s."))
+    assert ag._invoke(a, "hi") == "ok"
+    assert a.calls == 2
+
+
+def test_quota_error_is_still_a_transient_error():
+    """Subclassing keeps every existing handler working."""
+    from loop.agent import QuotaExhaustedError, TransientModelError
+    assert issubclass(QuotaExhaustedError, TransientModelError)
