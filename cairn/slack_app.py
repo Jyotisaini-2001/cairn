@@ -43,7 +43,7 @@ from cairn.agent import QuotaExhaustedError, TransientModelError
 from cairn.agent import run as run_agent, remember as remember_memory
 from cairn.jira_tool import (
     has_pending, pop_pending, _create_jira_issue_direct, _pending,
-    default_project_key, _dedup_check, resolve_project_key,
+    default_project_key, find_duplicate, resolve_project_key,
     _update_issue_direct,
 )
 from cairn.action_items import looks_like_action_item, extract_action_item, save_action_item
@@ -562,8 +562,9 @@ def _build_app(cfg: AppConfig) -> App:
             _react(client, ix.channel, ix.thread_ts, "eyes")
             try:
                 ticket = _extract_bug_details(text, raw_text)
-                # Dedup: if a similar open ticket already exists, skip staging
-                existing = _dedup_check(ticket["summary"])
+                # Dedup via the shared entry point — this path bypasses the
+                # agent, so it must not carry its own (weaker) copy of the check.
+                existing = find_duplicate(ticket["summary"])
                 if existing:
                     say(
                         text=f":mag: Looks like this may already be tracked: *{existing}* — check Jira before filing a new one.",
@@ -908,6 +909,15 @@ def start() -> None:  # pragma: no cover
         handler.connect()  # non-blocking: opens this app's socket on a background thread
         log.info("cairn: Slack app %r connected (socket mode)", cfg.name)
     log.info("cairn: %d app(s) running: %s", len(configs), ", ".join(c.name for c in configs))
+
+    # Say at startup whether Jira actually works. It fails quietly otherwise: a
+    # dead token still gets 200s (with empty results) from Jira's search
+    # endpoints, so ticket dedup silently finds nothing and filing 400s later.
+    if os.environ.get("JIRA_API_TOKEN"):
+        from cairn.jira_tool import check_auth  # noqa: PLC0415
+
+        ok, message = check_auth()
+        (log.info if ok else log.warning)("cairn: %s", message)
     # Ambient (proactive PM) mode — off unless CAIRN_AMBIENT=on; one daemon per app.
     from cairn import ambient  # noqa: PLC0415 (optional path; keeps import cost off the default)
 

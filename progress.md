@@ -135,6 +135,23 @@ prompt edit could silently regress quality and we'd never know.
 ---
 
 ## Status log
+- **2026-08-27 (feat/cairn)** — **Jira reframed to serve the direction.**
+  **(A) Dedup by meaning.** The existing check was keyword-based (`summary ~`
+  over the first six words), which misses the actual case: three people report
+  one bug in three wordings and none of them match each other. Recent open issues
+  are now compared by embedding against the proposed summary — the same tool the
+  memory store uses for near-duplicates — with the keyword search kept as a
+  fallback. Local embeddings, so it costs a Jira search and CPU: no model call,
+  no quota. This closes `gaps.txt` gap A.
+  **(B) A ticket carries the decision it came from.** Filing attaches the most
+  relevant decision from memory with its provenance, so whoever picks up the
+  ticket does not re-derive context settled in Slack weeks ago. Read straight from
+  the store, so filing never depends on model quota.
+  **(C) Both fail open.** A dedup or lookup failure lets the ticket through —
+  filing a duplicate is annoying, failing to file the bug is worse.
+  Switchable: `CAIRN_JIRA_DEDUP`, `CAIRN_JIRA_DEDUP_DISTANCE`, `CAIRN_JIRA_CITE`.
+  **Tests 278** (+11). Not verified against live Jira yet — the unit tests use
+  stub embeddings and stub issue lists.
 - **2026-08-26 (feat/cairn, governance)** — **PII redaction: credentials are
   stripped before a memory is written.** Memories are stored word for word, and a
   decision is exactly the kind of message that carries one — "ok let's go with the

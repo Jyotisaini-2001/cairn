@@ -156,6 +156,34 @@ def _resolve_slack_ids(text: str, bot_token: str) -> str:
     return text
 
 
+def check_auth() -> tuple[bool, str]:
+    """``(ok, message)`` for the configured Jira credentials.
+
+    Worth a dedicated check because Jira fails *quietly* when a token is dead:
+    `/project/search` and `/search/jql` answer **200 with empty results** to an
+    unauthenticated caller, so Cairn reports "no duplicates" and "no projects" —
+    answers that look normal. Only `/myself` distinguishes "nothing there" from
+    "not logged in".
+    """
+    creds = _client()
+    if creds is None:
+        return False, "Jira not configured (JIRA_URL / JIRA_USERNAME / JIRA_API_TOKEN)."
+    base_url, auth = creds
+    try:
+        resp = requests.get(f"{base_url}/rest/api/3/myself", auth=auth, timeout=10)
+    except Exception as err:  # noqa: BLE001
+        return False, f"Jira unreachable: {err}"
+    if resp.status_code == 401:
+        return False, ("Jira credentials rejected (401). The token is expired or "
+                       "revoked — note that searches still return 200 with empty "
+                       "results, so this looks like 'no data' rather than an error. "
+                       "New token: id.atlassian.com/manage-profile/security/api-tokens")
+    if not resp.ok:
+        return False, f"Jira auth check failed: HTTP {resp.status_code}"
+    who = resp.json().get("emailAddress") or resp.json().get("displayName") or "?"
+    return True, f"Jira authenticated as {who}"
+
+
 def _dedup_check(summary: str) -> str | None:
     """Search Jira for an existing open issue with a similar summary.
     Returns the issue key if a duplicate is found, else None."""
@@ -181,6 +209,181 @@ def _dedup_check(summary: str) -> str | None:
     except Exception as e:
         log.warning("cairn.jira: dedup check failed: %s", e)
     return None
+
+
+# ── Semantic dedup ───────────────────────────────────────────────────────────
+# The keyword check below misses the common case: three people report one bug in
+# three wordings ("checkout throwing 500", "500 error on the checkout page",
+# "payment step fails with a server error") and Jira's `~` operator matches none
+# of them to each other. That is gap A from gaps.txt — "no de-duplication" — and
+# it is the same problem the memory store already solved, so it uses the same
+# tool: compare meaning, not words.
+#
+# Embeddings are local (fastembed, no API key, no quota), so this costs a Jira
+# search and some CPU — no model call.
+_JIRA_DEDUP_DISTANCE = 0.25
+_JIRA_DEDUP_POOL = 50
+
+
+def _dedup_enabled() -> bool:
+    return os.environ.get("CAIRN_JIRA_DEDUP", "on").strip().lower() not in {
+        "off", "0", "false", "no"}
+
+
+def _dedup_distance() -> float:
+    try:
+        return max(0.0, float(os.environ.get("CAIRN_JIRA_DEDUP_DISTANCE",
+                                             _JIRA_DEDUP_DISTANCE)))
+    except ValueError:
+        return _JIRA_DEDUP_DISTANCE
+
+
+def _open_issues(limit: int = _JIRA_DEDUP_POOL) -> list[dict]:
+    """Recent open issues in the default project — the pool to compare against."""
+    creds = _client()
+    if creds is None:
+        return []
+    base_url, auth = creds
+    jql = (f"project = {default_project_key()} AND statusCategory != Done "
+           f"ORDER BY created DESC")
+    try:
+        resp = requests.get(
+            f"{base_url}/rest/api/3/search/jql", auth=auth,
+            params={"jql": jql, "maxResults": limit, "fields": "summary"},
+            timeout=10)
+        resp.raise_for_status()
+        return resp.json().get("issues", []) or []
+    except Exception as err:  # noqa: BLE001
+        log.warning("cairn.jira: could not list open issues: %s", err)
+        return []
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    return 1.0 if not (na and nb) else dot / (na * nb)
+
+
+def _similar_issue(summary: str) -> tuple[str, str] | None:
+    """``(key, existing_summary)`` of an open issue that means the same thing.
+
+    Never raises: a dedup failure must not stop a ticket being filed. Filing a
+    duplicate is annoying; failing to file the bug at all is worse.
+    """
+    if not (_dedup_enabled() and summary.strip()):
+        return None
+    issues = _open_issues()
+    if not issues:
+        return None
+    try:
+        from cairn.embeddings import get_embedder  # noqa: PLC0415
+
+        embedder = get_embedder()
+        summaries = [i.get("fields", {}).get("summary", "") for i in issues]
+        vectors = embedder.embed([summary, *summaries])
+        target, rest = vectors[0], vectors[1:]
+        best, best_distance = None, 1.0
+        for issue, vec in zip(issues, rest):
+            distance = 1.0 - _cosine(target, vec)
+            if distance < best_distance:
+                best, best_distance = issue, distance
+        if best is not None and best_distance <= _dedup_distance():
+            log.info("cairn.jira: %s looks like a duplicate (distance=%.3f)",
+                     best.get("key"), best_distance)
+            return best.get("key", ""), best.get("fields", {}).get("summary", "")
+    except Exception as err:  # noqa: BLE001
+        log.warning("cairn.jira: semantic dedup unavailable (%s); "
+                    "falling back to keyword match", err)
+    return None
+
+
+# ── Citing the decision a ticket came from ───────────────────────────────────
+# Jira is supporting cast now: a ticket should carry the decision it relates to,
+# so whoever picks it up does not have to re-derive context that was settled in
+# Slack weeks ago.
+# How close a decision must be to a ticket before it is worth attaching. With a
+# small store *something* always comes back from a search, and an unrelated
+# decision on a ticket is worse than none: it reads as context and is not. A live
+# run attached a dashboards decision to a CSV-export bug.
+#
+# Measured against the real store rather than guessed:
+#     CSV-export bug   -> Postgres decision    0.472   (unrelated)
+#     dashboards bug   -> dashboards decision  0.418   (relevant)
+#     billing-db bug   -> Postgres decision    0.233   (relevant)
+#
+# The usable gap is 0.054 wide, so this will occasionally get it wrong. It sits
+# just under the unrelated case rather than just over the relevant one, because
+# the two failures are not equal: a missing citation is a smaller loss than a
+# confidently wrong one on a ticket someone will act on.
+_CITE_DISTANCE = 0.42
+
+
+def _cite_distance() -> float:
+    try:
+        return max(0.0, float(os.environ.get("CAIRN_JIRA_CITE_DISTANCE", _CITE_DISTANCE)))
+    except ValueError:
+        return _CITE_DISTANCE
+
+
+def _related_decision(text: str) -> str:
+    """A one-line, sourced decision genuinely relevant to this ticket, or "".
+
+    Reads the memory store directly — no model call, so filing a ticket never
+    depends on quota — and checks relevance itself, because `search` ranks but
+    does not threshold.
+    """
+    if os.environ.get("CAIRN_JIRA_CITE", "on").strip().lower() in {"off", "0", "false", "no"}:
+        return ""
+    try:
+        import asyncio  # noqa: PLC0415
+
+        from cairn.agent import _memory_store  # noqa: PLC0415
+        from cairn.decisions import _cite  # noqa: PLC0415
+        from cairn.embeddings import get_embedder  # noqa: PLC0415
+
+        entries = asyncio.run(_memory_store().search(text))
+        if not entries:
+            return ""
+        top = entries[0]
+        content = (getattr(top, "content", "") or "").strip()
+        if not content:
+            return ""
+
+        # Rank is not relevance. Measure it.
+        embedder = get_embedder()
+        a, b = embedder.embed([text, content])
+        if 1.0 - _cosine(a, b) > _cite_distance():
+            log.info("cairn.jira: no decision close enough to cite")
+            return ""
+
+        meta = getattr(top, "metadata", None) or {}
+        cite = _cite(meta.get("author"), meta.get("channel"),
+                     meta.get("date") or meta.get("created_at"))
+        return f"\n\nRelated decision: {content}" + (f"\n— {cite}" if cite else "")
+    except Exception:  # noqa: BLE001
+        log.info("cairn.jira: no related decision available", exc_info=False)
+        return ""
+
+
+def find_duplicate(summary: str) -> str | None:
+    """The key of an existing open issue this would duplicate, or None.
+
+    **The** entry point for dedup — both callers must use it. There are two paths
+    into ticket creation (the agent's `jira_stage_ticket`, and the deterministic
+    bug shortcut in `slack_app`, which bypasses the agent because the model does
+    not reliably call the tool), and wiring a better check into only one of them
+    is exactly the bug this consolidates away: semantic dedup was live in the
+    tool while Slack still used the keyword check, so a re-worded duplicate got
+    staged anyway.
+
+    Meaning first, keywords as fallback — the fallback still earns its place when
+    embeddings are unavailable.
+    """
+    similar = _similar_issue(summary)
+    if similar:
+        return similar[0]
+    return _dedup_check(summary)
 
 
 def pop_pending(thread_ts: str) -> dict | None:
@@ -214,6 +417,9 @@ def _create_issue(
     project_key, proj_note = resolve_project_key(project_key)
     requested_assignee = assignee_name or slack_mention or assignee_email
     assignee_email = _resolve_assignee_email(assignee_email, slack_mention, assignee_name)
+    # Attach the related decision BEFORE resolving Slack ids, so the citation's
+    # <@U…> / <#C…> render as names too — a citation nobody can read is not one.
+    description += _related_decision(f"{summary} {description}")
     description = _resolve_slack_ids(description, os.environ.get("SLACK_BOT_TOKEN", ""))
 
     fields: dict[str, Any] = {
@@ -627,7 +833,9 @@ def jira_stage_ticket(
         return "Could not stage ticket: no thread context."
 
     # Dedup regardless of path (agent tool or deterministic staging both land here-ish):
-    existing = _dedup_check(summary)
+    # Meaning first, keywords as the fallback: three people reporting one bug in
+    # three wordings is the case the keyword search cannot see.
+    existing = find_duplicate(summary)
     if existing:
         base_url = _client()[0] if _client() else ""
         link = f": {base_url}/browse/{existing}" if base_url else ""

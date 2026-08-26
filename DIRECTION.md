@@ -330,7 +330,20 @@ before retiring a decision.
       not "you already decided this". A team may be revisiting a decision
       deliberately, and Cairn is not the referee.
 
-Jira is reframed throughout: **file a ticket that cites the decision it came from.**
+**Jira, reframed** — ✅ **done 2026-08-27**
+- [x] **Dedup by meaning.** Three people report one bug in three wordings —
+      "checkout throwing 500", "500 error on the checkout page", "payment step
+      fails with a server error" — and Jira's `~` operator matches none of them to
+      each other. That is `gaps.txt` gap A, and it is the problem the memory store
+      already solved, so it uses the same tool: recent open issues are compared by
+      embedding against the proposed summary. Local embeddings, so it costs a Jira
+      search and some CPU — no model call, no quota.
+- [x] **A ticket cites the decision it came from.** Filing now attaches the most
+      relevant decision from memory, with its source, so whoever picks the ticket
+      up does not have to re-derive context that was settled in Slack weeks ago.
+      Read straight from the store — filing never depends on model quota.
+- Both fail open: a dedup or lookup failure lets the ticket through. Filing a
+  duplicate is annoying; failing to file the bug at all is worse.
 
 ---
 
