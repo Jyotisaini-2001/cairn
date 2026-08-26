@@ -135,6 +135,61 @@ prompt edit could silently regress quality and we'd never know.
 ---
 
 ## Status log
+- **2026-08-26 (feat/cairn, governance)** — **PII redaction: credentials are
+  stripped before a memory is written.** Memories are stored word for word, and a
+  decision is exactly the kind of message that carries one — "ok let's go with the
+  new provider, key is sk-live-…". Without this the key landed in the database,
+  was embedded into a vector, and would be read back months later by anyone who
+  asked the right question.
+  **(A) At the store, not the caller.** `cairn/redact.py` is applied inside both
+  memory stores' `add()`, which is the single point every write passes through:
+  the agent's `add_memory`, the direct `remember()` path, passive capture and
+  backfill. Anywhere else and one of those four stays uncovered.
+  **(B) Before the embedding, not after.** The vector is derived from the text,
+  so redacting afterwards would leave the secret encoded in the embedding even
+  though the stored text looked clean.
+  **(C) The memory stays readable.** A match becomes a labelled placeholder
+  (`[redacted:api-key]`), so the decision still says what was decided and the
+  reader can see that a credential was there. What was stripped is recorded in
+  the entry's metadata, so it is auditable.
+  **(D) Slack refs are protected.** `<@U…>` / `<#C…>` read as long tokens to a
+  naive matcher, and losing them would break the citation the memory exists for.
+  Covers provider keys (OpenAI/Stripe-style, Slack, GitHub, AWS, Google), JWTs,
+  private-key blocks, passwords inside connection strings, self-naming secrets
+  (`password: …`), card numbers and emails. `CAIRN_REDACT=off` disables it;
+  `CAIRN_REDACT_KINDS` narrows the categories, since some teams genuinely want an
+  email kept.
+  **Tests 267** (+16). Verified live against the real store.
+  **Deliberately not done yet:** authz (an allow-list of who may use Cairn). The
+  workspace currently has one human in it, so it buys nothing today — but it is
+  the other half of Pillar 05 and blocks any real deployment.
+- **2026-08-26 (feat/cairn, evals)** — **Closed the measurement gap: +6 golden
+  cases, and a full run is now actually finishable on a free tier.**
+  **(A) The golden set covers the new work** (29 → 35). Three **supersession**
+  cases run in order — state the original, state the revision, then ask — and the
+  revision deliberately does *not* restate the old value, so a pass proves the
+  store retired the old row rather than the model reasoning its way there. Two
+  **decision-log** cases pin the boundary from both sides: a question about the
+  record must reach for the log, a "why did we…" must not. One **provenance**
+  case guards the central claim. (Capture, dedup and backfill stay in `tests/` —
+  they are not single-turn behaviours, so the golden runner cannot score them.)
+  **(B) `cairn-eval --resume`.** A free-tier quota is tens of requests per day and
+  35 cases need ~40 model calls, so the set cannot finish in one sitting; without
+  resume the next day's allowance goes on re-proving yesterday's passes and the
+  set never completes. Results append to the same `run_id`, so the scorecard is
+  one comparable run. Only *passes* are skipped — a failure is the thing you are
+  fixing, and one failure is not a verdict.
+  **(C) Two traps that resume exposed.** The isolated memory DB had to become
+  **stable per run**: with a fresh throwaway DB, every `mem-recall-*` would fail
+  for want of a memory a skipped `mem-add-*` had already written — false failures
+  that look exactly like a regression. And an exhausted quota now **halts the
+  whole run** instead of recording the remaining cases as failures, printing the
+  exact resume command.
+  **(D) `--model` override**, since free-tier quotas are per model — rotating
+  models is how a full run finishes in one day.
+  **Tests 251.** Verified live: a 2-case run, then `--resume` correctly skipped
+  both and ran only the third, appending to the same run id.
+  **Open:** an actual full-set baseline still needs to be run and recorded here.
 - **2026-08-26 (feat/cairn, Phases 2 + 4)** — **All five phases of `DIRECTION.md`
   are now done.**
   **(A) Phase 2 — the decision log** (`cairn/decisions.py`). Recall had only ever

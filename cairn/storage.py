@@ -38,6 +38,7 @@ from typing import Any
 from strands.memory.types import MemoryEntry, SearchOptions
 
 from cairn import context as reqctx
+from cairn.redact import redact
 
 log = logging.getLogger("cairn.memory")
 
@@ -254,6 +255,8 @@ class SqliteMemoryStore:
 
     # --- write -------------------------------------------------------------
     async def add(self, content: str, metadata: Any = None) -> int:
+        # Strip credentials before they reach the database — see cairn/redact.py.
+        content, redacted = redact(content)
         """Persist a memory, auto-stamping provenance from the active request.
 
         `metadata` (when a caller passes a dict) is merged over the request's
@@ -265,6 +268,8 @@ class SqliteMemoryStore:
         state = reqctx.current()
         if state is not None:
             merged.update(state.provenance())
+        if redacted:
+            merged["redacted"] = redacted
         if isinstance(metadata, dict):
             merged.update(metadata)
         elif metadata is not None:

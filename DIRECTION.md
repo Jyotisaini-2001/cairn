@@ -370,3 +370,35 @@ Jira is reframed throughout: **file a ticket that cites the decision it came fro
       thread context is a prerequisite for Phase 1's thread-level capture.
 - [ ] Should scope default change from `channel` to something wider for
       onboarding-style questions?
+
+
+---
+
+## 9. Measurement
+
+`cairn-eval` runs `evals/golden.json` (35 cases) through the **real** agent and
+scores tool selection and reply content, persisting every result to
+`eval_results` with the model that produced it.
+
+Coverage follows the direction: **supersession** (3), **decision log** (2),
+**provenance** (1), memory and scope (15), plus the original behaviour set.
+Capture, dedup and backfill are covered by `tests/` instead — they are not
+single-turn behaviours, so the golden runner cannot score them.
+
+**Running it on a free tier.** 35 cases need ~40 model calls; Gemini's free tier
+allows 20 per day *per model*. So a run is designed to be finished in pieces:
+
+```bash
+cairn-eval                                   # start
+cairn-eval --resume                          # continue tomorrow
+cairn-eval --resume <id> --model <other>     # or continue now on a fresh quota
+```
+
+Results append to one `run_id`, so the scorecard stays comparable. Only passes
+are skipped — a failure is what you are trying to fix. An exhausted quota halts
+the run rather than recording the remainder as failures.
+
+**Still to do:** record an actual full-set baseline here, and a second run on a
+different model. Comparing models is what the dataset is for, and until that
+number exists the honest statement is "it works when tested by hand" — which is
+how eight of this project's real bugs were found, and does not scale.

@@ -39,6 +39,7 @@ from typing import Any
 from strands.memory.types import MemoryEntry, SearchOptions
 
 from cairn import context as reqctx
+from cairn.redact import redact
 from cairn.embeddings import Embedder, get_embedder
 from cairn.storage import _fts_match  # reuse the injection-safe query sanitizer
 
@@ -472,10 +473,16 @@ class HybridMemoryStore:
         return stats
 
     async def add(self, content: str, metadata: Any = None) -> int:
+        # Before anything else: strip credentials. This must happen ahead of the
+        # embedding, or the secret stays encoded in the vector even though the
+        # text no longer shows it.
+        content, redacted = redact(content)
         merged: dict[str, Any] = {}
         state = reqctx.current()
         if state is not None:
             merged.update(state.provenance())
+        if redacted:
+            merged["redacted"] = redacted
         if isinstance(metadata, dict):
             merged.update(metadata)
         elif metadata is not None:
