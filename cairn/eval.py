@@ -18,6 +18,8 @@ Usage:
     cairn-eval --limit 5       # first 5 cases (smoke test)
     cairn-eval --case calc-multiply mem-recall-standup
     cairn-eval --json          # machine-readable summary to stdout
+    cairn-eval --resume        # continue the last run, skipping its passes
+    cairn-eval --resume <id> --model gemini-3.7-flash   # continue on another model
     cairn-eval --use-real-memory   # don't isolate memory (default: throwaway DB)
 
 Each case in golden.json:
@@ -30,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -37,6 +40,8 @@ import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+log = logging.getLogger("cairn.eval")
 
 DATASET = Path(__file__).resolve().parent.parent / "evals" / "golden.json"
 
@@ -69,6 +74,34 @@ def _score(run, expect: dict) -> list[str]:
     return reasons
 
 
+def _resume_target(which: str) -> tuple[str, set[str]]:
+    """``(run_id, ids already passed)`` for a run to continue.
+
+    ``which`` is a run id, or "last" for the most recent. A case that *failed* is
+    deliberately retried — a failure is the thing you are trying to fix, and the
+    non-determinism the classifier already showed us means one failure is not a
+    verdict. Only passes are skipped.
+    """
+    import sqlite3  # noqa: PLC0415
+
+    path = os.environ.get("DATABASE_PATH", "./data/cairn.db")
+    try:
+        conn = sqlite3.connect(path)
+        if which == "last":
+            row = conn.execute(
+                "SELECT run_id FROM eval_results ORDER BY id DESC LIMIT 1").fetchone()
+            if not row:
+                return uuid.uuid4().hex[:12], set()
+            which = str(row[0])
+        rows = conn.execute(
+            "SELECT case_id FROM eval_results WHERE run_id=? AND passed=1", (which,)
+        ).fetchall()
+        return which, {str(r[0]) for r in rows}
+    except Exception as err:  # noqa: BLE001
+        log.warning("could not read previous run (%s); starting fresh", err)
+        return uuid.uuid4().hex[:12], set()
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(prog="cairn-eval", description="Run Cairn's golden eval set.")
@@ -76,6 +109,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="run only the first N cases")
     parser.add_argument("--case", nargs="+", default=None, help="run only these case ids")
     parser.add_argument("--json", action="store_true", help="emit a JSON summary")
+    parser.add_argument("--model", help="override CAIRN_MODEL for this run — "
+                        "free-tier quotas are per model, so rotating models is "
+                        "how a full run finishes in one day")
+    parser.add_argument("--resume", metavar="RUN_ID", nargs="?", const="last",
+                        help="continue a run, skipping cases it already passed; "
+                             "omit the id to continue the most recent run")
     parser.add_argument(
         "--use-real-memory", action="store_true",
         help="run against the real memory DB instead of a throwaway one (default: isolate)",
@@ -97,15 +136,32 @@ def main(argv: list[str] | None = None) -> int:
     # store and never pollute production memory. eval_results still go to the real
     # DATABASE_PATH (telemetry is decoupled from memory). Memory-dependent cases
     # (mem-add-* before mem-recall-*) rely on file order within one run.
-    if not args.use_real_memory:
-        import tempfile
+    if args.model:
+        os.environ["CAIRN_MODEL"] = args.model
 
-        mem_dir = tempfile.mkdtemp(prefix="cairn-eval-mem-")
+    # Resolve the run id first: an isolated memory DB has to be *stable per run*
+    # or resuming breaks the dataset. The mem-add cases seed memories that the
+    # mem-recall cases read; with a fresh throwaway DB on resume, every recall
+    # would fail for want of a memory that a skipped case had already written —
+    # false failures that look exactly like a regression.
+    resume_id, already_passed = _resume_target(args.resume) if args.resume else (None, set())
+    run_id = resume_id or uuid.uuid4().hex[:12]
+
+    if not args.use_real_memory:
+        # Under data/, not the system temp dir: a resumed run may be *days* later
+        # (a free-tier quota is per day), and macOS prunes temp. If the memory DB
+        # vanished between sittings, every mem-recall case would fail for want of
+        # a memory its mem-add case had already written — a false regression.
+        mem_dir = os.path.join(os.path.dirname(
+            os.environ.get("DATABASE_PATH", "./data/cairn.db")) or ".",
+            "eval-runs", run_id)
+        os.makedirs(mem_dir, exist_ok=True)
         os.environ["CAIRN_MEMORY_DB_PATH"] = os.path.join(mem_dir, "memory.db")
         os.environ["CAIRN_VECTOR_DB_PATH"] = os.path.join(mem_dir, "memory_vec.db")
 
     # Import after load_dotenv (+ memory env) so the model/store env is in place.
     from cairn import observability as obs
+    from cairn.agent import QuotaExhaustedError
     from cairn.agent import run as run_agent
 
     cases = _load(Path(args.dataset))
@@ -115,7 +171,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit:
         cases = cases[: args.limit]
 
-    run_id = uuid.uuid4().hex[:12]
+    # Resuming matters because a free-tier quota is measured in tens of requests
+    # per day: a 35-case set cannot finish in one sitting, and re-running from
+    # the top would spend the next day's allowance re-proving yesterday's passes.
+    # Results append to the SAME run_id so the scorecard is one comparable run.
+    if already_passed:
+        skipped = [c["id"] for c in cases if c["id"] in already_passed]
+        cases = [c for c in cases if c["id"] not in already_passed]
+        if not args.json:
+            print(f"\nResuming run {run_id}: {len(skipped)} case(s) already passed, "
+                  f"{len(cases)} to go.")
     # Ask the agent, not the env: the provider factory resolves CAIRN_MODEL /
     # ANTHROPIC_MODEL / the built-in default, and reading one env var recorded
     # "?" for every run the moment the project moved off Anthropic — which
@@ -141,6 +206,15 @@ def main(argv: list[str] | None = None) -> int:
         try:
             run = run_agent(c["prompt"], context=c.get("context"))
             err = None
+        except QuotaExhaustedError as exc:
+            # Every remaining case would fail the same way, recording false
+            # failures that look like regressions. Stop, and say how to continue.
+            if not args.json:
+                print(f"\n⛔ Quota exhausted after {len(results)} case(s).")
+                print(f"   Resume tomorrow:  cairn-eval --resume {run_id}")
+                print(f"   Or switch model:  cairn-eval --resume {run_id} --model <other-model>")
+            log.warning("eval halted on exhausted quota: %s", str(exc)[:160])
+            break
         except Exception as exc:  # noqa: BLE001
             run = None
             err = f"{type(exc).__name__}: {exc}"

@@ -46,10 +46,26 @@ two Slack entrypoints (`@mention`, `/loop`). Tools: `slack`, `slack_send_message
 ## Run
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
-cp .env.example .env   # fill in Slack tokens + MiniMax key
-loop
+pip install -e ".[vector]"
+cp .env.example .env   # fill in Slack tokens + a model key
+cairn
 ```
+
+**Known trap — the editable install.** Hatchling writes its path file to
+`.venv/lib/python3.12/site-packages/_editable_impl_cairn.pth`, and on this setup
+`site.py` does not apply it: `pip list` shows the package installed and
+`import cairn` works *from the repo directory* (cwd is on the path), so nothing
+looks wrong until a console script — `cairn`, `cairn-eval`, `cairn-backfill` —
+fails with `ModuleNotFoundError` from anywhere else. Fix:
+
+```bash
+sp=.venv/lib/python3.12/site-packages
+rm -f $sp/_editable_impl_cairn.pth
+printf '%s\n' "$(pwd)" > $sp/cairn-dev-path.pth
+```
+
+Also note **moving the project folder breaks the venv** — venv scripts hardcode
+their absolute path in the shebang. Delete and recreate it after any move.
 
 ## Git identity (IMPORTANT)
 - **Commit as `Jyoti Saini <sainijyoti042002@gmail.com>`.** This is the repo-local

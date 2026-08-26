@@ -40,3 +40,6 @@ Observability_study_ROI.png
 # Editor
 .vscode/
 .idea/
+
+# throwaway memory DBs from resumable eval runs
+data/eval-runs/
