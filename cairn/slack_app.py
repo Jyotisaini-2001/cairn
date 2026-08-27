@@ -35,6 +35,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from cairn import context as reqctx
+from cairn import authz
 from cairn import conversation
 from cairn import decisions
 from cairn import resurface
@@ -415,10 +416,33 @@ def _capture_conversation(client, event: dict, cfg: "AppConfig") -> None:
         team=event.get("team"), source=cfg.name, thread_ts=thread_ts)
 
 
+def _authorised(ix: obs.Interaction, respond, logger) -> bool:
+    """Gate one invocation. Returns False (and tells the user) when refused.
+
+    Applied at `_answer` — the shared path for mentions and DMs — and separately
+    in the slash handler, which answers from the decision log before reaching it.
+    Refusals are recorded as interactions with outcome="denied", so an audit
+    shows what was attempted, not just what succeeded.
+    """
+    ok, reason = authz.check(ix.user, ix.channel)
+    if ok:
+        return True
+    logger.warning("[authz] denied %s: %s", ix.request_id, reason)
+    ix.outcome, ix.error = "denied", reason
+    try:
+        obs._persist(ix)
+    except Exception:  # noqa: BLE001
+        pass
+    respond(authz.DENIAL_MESSAGE)
+    return False
+
+
 def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachments=None,
             app_name=None, bot_user_id: str = "") -> None:
     """Shared path for mention + DM: react, run the agent under telemetry, reply."""
     channel, thread_ts = ix.channel, ix.thread_ts
+    if not _authorised(ix, lambda text: say(text=text, thread_ts=thread_ts), logger):
+        return
     _react(client, channel, thread_ts, "eyes")
     # Recent turns of this thread, so follow-ups ("what about the second one?")
     # resolve. Empty for a fresh top-level mention; never fatal.
@@ -697,13 +721,15 @@ def _build_app(cfg: AppConfig) -> App:
             # would feed its output into its own memory, to be cited later as
             # evidence. Bolt delivers bot messages here too, so this matters.
             if (not event.get("bot_id")
+                    and authz.may_listen(channel)
                     and memory_capture.enabled()
                     and memory_capture.looks_memorable(text)):
                 _dispatch(_capture_conversation, client, event, cfg)
             # Proactivity, earned (CAIRN_RESURFACE=off by default): if someone
             # re-opens a question the record already answers, offer the decision
             # and its source. Same engine as recall, pushed instead of pulled.
-            elif not event.get("bot_id") and resurface.enabled():
+            elif (not event.get("bot_id") and authz.may_listen(channel)
+                  and resurface.enabled()):
                 _dispatch(_maybe_resurface, event, say, cfg)
             return  # observe-only (channel chatter) — not a DM to Cairn
         if "<@" in raw:
@@ -733,12 +759,6 @@ def _build_app(cfg: AppConfig) -> App:
         # quota is spent. Anything else goes to the agent.
         ack()
         text = (command.get("text") or "").strip()
-        if not text or _LOG_REQUEST_RE.search(text):
-            scope = None
-            if (cid := command.get("channel_id")):
-                scope = reqctx.scope_for(cid, command.get("team_id"))
-            respond(decisions.log_decisions(text, scope=scope))
-            return
         ix = obs.Interaction(
             entrypoint=f"{cfg.name}:slash",
             team=command.get("team_id"),
@@ -748,6 +768,26 @@ def _build_app(cfg: AppConfig) -> App:
             prompt=text,
         )
         log.info("[%s] slash rid=%s channel=%s user=%s", cfg.name, ix.request_id, ix.channel, ix.user)
+
+        # Permission management runs BEFORE the permission check. An admin who
+        # accidentally locks themselves out has to be able to type `/cairn allow
+        # @me` and recover; a gate in front of that would make the mistake
+        # permanent from inside Slack. `handle_admin_command` does its own admin
+        # check, so this is not a hole.
+        admin_reply = authz.handle_admin_command(text, actor=ix.user)
+        if admin_reply is not None:
+            respond(admin_reply)
+            return
+
+        # Gate BEFORE the decision-log branch, not after: the log answers from
+        # the store without touching the agent, so a check placed later would
+        # leave the whole record readable by anyone with the slash command.
+        if not _authorised(ix, respond, log):
+            return
+        if not text or _LOG_REQUEST_RE.search(text):
+            scope = reqctx.scope_for(ix.channel, ix.team) if ix.channel else None
+            respond(decisions.log_decisions(text, scope=scope))
+            return
         try:
             with obs.record(ix):
                 run = run_agent(text, context=_ctx_cmd(command), request_id=ix.request_id, app_name=cfg.name)
@@ -852,6 +892,8 @@ def _attach_assistant(app: "App", cfg: "AppConfig") -> None:
         )
         log.info("[%s] assistant rid=%s channel=%s user=%s files=%d",
                  cfg.name, ix.request_id, ix.channel, ix.user, len(attachments))
+        if not _authorised(ix, lambda t: say(text=t), log):
+            return
         try:
             with obs.record(ix):
                 run = run_agent(
