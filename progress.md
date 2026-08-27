@@ -135,6 +135,35 @@ prompt edit could silently regress quality and we'd never know.
 ---
 
 ## Status log
+- **2026-08-27 (feat/cairn)** — **Re-measured the dedup/supersession thresholds
+  against a realistic corpus; the original numbers were an artefact of a
+  three-memory store.**
+  **(A) The first measurement was wrong.** Taken when the store held three
+  memories, it read: same fact re-phrased 0.12–0.15, answer changed 0.179,
+  unrelated 0.49–0.60 — apparently a 0.054-wide gap. Against a 44-decision corpus
+  with real topic overlap (`evals/threshold_corpus.py`): same decision reworded
+  **0.176–0.266**, replaced **0.236–0.332**, independent same-topic
+  **0.460–0.569**, unrelated median **0.531**.
+  **(B) The finding is stronger than the original claim.** The duplicate and
+  replacement bands do not merely sit close — they **overlap**. Distance cannot
+  distinguish "the same decision said differently" from "the decision changed",
+  and no threshold will. What separates cleanly is *related vs not*: a 0.128 gap
+  between 0.332 and 0.460. That is precisely what distance is used for here — it
+  decides how much to ask, and the model decides what the relation is.
+  **(C) The thresholds hold.** On that corpus `_RELATED_MAX=0.45` sent **6/6**
+  genuine relations to the classifier and **0/8** independent same-topic pairs,
+  at a cost of ~6% of unrelated pairs entering the band and returning
+  "independent". `_DEDUP_HARD=0.08` catches none for free, and stays low
+  deliberately: duplicates start at 0.176 and replacements at 0.236, so raising
+  it far enough to be useful would put it inside the overlap, where a free
+  collapse would silently merge a decision with the one that replaced it.
+  **(D) `python -m evals.measure_thresholds`** re-runs this any time — local
+  embeddings only, no model calls, no quota. The numbers and their reasoning are
+  recorded in `cairn/vector_store.py`'s header so the next person does not
+  re-tune blindly.
+  **Note:** the corpus is synthetic. It is a far better basis than three
+  memories, and still not a substitute for measuring against a store filled by
+  real use — which remains the open item, along with the eval baseline.
 - **2026-08-27 (feat/cairn)** — **Jira reframed to serve the direction.**
   **(A) Dedup by meaning.** The existing check was keyword-based (`summary ~`
   over the first six words), which misses the actual case: three people report

@@ -67,20 +67,33 @@ def _row_in_scope(row: tuple, scope: tuple[str, str]) -> bool:
     return row[_SCOPE_IDX[col]] == val
 
 
-# How close is "the same thing"? Measured on real fastembed vectors over the
-# store's own contents:
+# How close is "the same thing"? Measured twice — the second time properly.
 #
-#     same fact, re-phrased ............ 0.120 – 0.150
-#     same subject, answer changed ..... 0.179   (24h review cap -> 4h)
-#     different subject ................ 0.490 – 0.600
+# First pass, against a store holding three memories:
+#     same fact re-phrased 0.12-0.15, answer changed 0.179, unrelated 0.49-0.60.
+# That looked like a 0.054-wide gap between the first two. It was an artefact of
+# the sample.
 #
-# The first two bands nearly touch, which is unsurprising: "we cap review at 24
-# hours" and "we moved review to 4 hours" *are* textually similar. No threshold
-# separates them reliably, so distance only decides how much to ask:
+# Re-measured against a 44-decision corpus with real topic overlap:
+#     same decision, reworded ....... 0.176 - 0.266
+#     replaced (answer changed) ..... 0.236 - 0.332   <- OVERLAPS the above
+#     independent, same topic ....... 0.460 - 0.569
+#     unrelated ..................... median 0.531
 #
-#     <= _DEDUP_HARD    identical enough to collapse, free, no model call
-#     <= _RELATED_MAX   ambiguous — one model call to classify
-#     >                 unrelated, store it
+# The first two bands do not merely sit close, they overlap: distance cannot
+# distinguish "the same decision said differently" from "the decision changed",
+# and no threshold will. What separates cleanly is *related vs not* — a 0.128
+# gap between 0.332 and 0.460 — which is exactly what distance is used for here.
+# It decides how much to ask; the model decides what the relation is.
+#
+# On that corpus the bands below sent 6/6 genuine relations to the classifier and
+# 0/8 independent same-topic pairs, at a cost of ~6% of unrelated pairs entering
+# the band and coming back "independent".
+#
+# _DEDUP_HARD stays deliberately low. It is the "collapse without asking" band,
+# and since duplicates start at 0.176 while replacements start at 0.236, raising
+# it far enough to be useful would put it inside the overlap — where a free
+# collapse would silently merge a decision with the one that replaced it.
 _DEDUP_HARD = 0.08
 _RELATED_MAX = 0.45
 # How many live neighbours a new memory is compared against (decisions chain).
