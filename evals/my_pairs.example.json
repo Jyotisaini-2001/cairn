@@ -1,0 +1,14 @@
+[
+  {
+    "old": "Customer refunds are approved by the support lead.",
+    "new": "Customer refunds are approved by the finance team.",
+    "expected": "replaces",
+    "note": "example: approver changed"
+  },
+  {
+    "old": "Staging is reset every Monday morning.",
+    "new": "The demo environment is reset every Monday morning.",
+    "expected": "independent",
+    "note": "example: same wording, different environment"
+  }
+]

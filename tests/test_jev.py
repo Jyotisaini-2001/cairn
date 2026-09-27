@@ -143,3 +143,95 @@ def test_jev_off_uses_the_llm(monkeypatch):
     monkeypatch.setattr(jev, "_post", lambda p: pytest.fail("Jev called while off"))
     monkeypatch.setattr(llm, "extract_json", lambda *a, **k: {"relation": "duplicate"})
     assert vs._classify("new", "old") == "duplicate"
+
+
+# ------------------------------------------------------------ yes/no checks
+# Jev reads literally: asked only "how does NEW relate to OLD", it retired a
+# permanent rule on reading a one-off, and an exception on reading a restated
+# general rule, at up to 1.00 confidence. Two direct checks ride in the same call.
+def _with_checks(relation, confidence=0.95, **checks):
+    body = _answer(relation, confidence)
+    for name, p in checks.items():
+        body["answers"][name] = {"type": "noul", "noul": p}
+    return body
+
+
+def test_checks_are_asked_in_the_same_call(jev_on, monkeypatch):
+    sent = []
+    monkeypatch.setattr(jev, "_post", lambda p: sent.append(p) or _answer("independent", 0.9))
+    vs._classify("new", "old")
+    qs = sent[0]["questions"]
+    assert len(sent) == 1
+    assert qs["temporary"]["type"] == "noul" and qs["same_case"]["type"] == "noul"
+
+
+def test_checks_can_be_switched_off(jev_on, monkeypatch):
+    monkeypatch.setenv("CAIRN_JEV_CHECKS", "off")
+    sent = []
+    monkeypatch.setattr(jev, "_post", lambda p: sent.append(p) or _answer("independent", 0.9))
+    vs._classify("new", "old")
+    assert set(sent[0]["questions"]) == {"q"}
+
+
+def test_check_answers_are_parsed(jev_on, monkeypatch):
+    monkeypatch.setattr(jev, "_post", lambda p: _with_checks("replaces", temporary=0.2, same_case=0.9))
+    got = jev.choice("s", "i", {"replaces": "", "independent": ""},
+                     checks={"temporary": "t", "same_case": "c"})
+    assert got.checks == {"temporary": 0.2, "same_case": 0.9}
+
+
+def test_a_one_off_never_retires_the_permanent_rule(jev_on, monkeypatch):
+    """'For this week's launch, deploy on Saturday' vs 'releases on weekdays'."""
+    _llm_must_not_run(monkeypatch)
+    monkeypatch.setattr(jev, "_post", lambda p: _with_checks("replaces", 0.99, temporary=0.9, same_case=0.9))
+    assert vs._classify("new", "old") == "independent"
+
+
+def test_a_rule_about_a_different_case_does_not_retire_the_exception(jev_on, monkeypatch):
+    """'Daily standup is at 10:00' vs 'standups are async on Fridays'."""
+    _llm_must_not_run(monkeypatch)
+    monkeypatch.setattr(jev, "_post", lambda p: _with_checks("replaces", 1.0, temporary=0.1, same_case=0.2))
+    assert vs._classify("new", "old") == "independent"
+
+
+def test_a_real_replacement_still_retires(jev_on, monkeypatch):
+    """'Review is Thursday 16:00' -> 'review is Monday 16:00' must still retire."""
+    _llm_must_not_run(monkeypatch)
+    monkeypatch.setattr(jev, "_post", lambda p: _with_checks("replaces", 1.0, temporary=0.05, same_case=0.95))
+    assert vs._classify("new", "old") == "replaces"
+
+
+def test_checks_do_not_touch_duplicates(jev_on, monkeypatch):
+    _llm_must_not_run(monkeypatch)
+    monkeypatch.setattr(jev, "_post", lambda p: _with_checks("duplicate", 0.99, temporary=0.9, same_case=0.1))
+    assert vs._classify("new", "old") == "duplicate"
+
+
+# ------------------------------------------- TypeSafe's yes/no bands (0.2 / 0.8)
+# Both checks guard a retirement, so only a clear answer lets one through; the
+# unsure band between keeps both (and is where a question to a person goes later).
+def test_checks_carry_true_and_false_criteria(jev_on, monkeypatch):
+    sent = []
+    monkeypatch.setattr(jev, "_post", lambda p: sent.append(p) or _answer("independent", 0.9))
+    vs._classify("new", "old")
+    for name in ("temporary", "same_case"):
+        assert set(sent[0]["questions"][name]["criteria"]) == {"true", "false"}
+
+
+def test_maybe_temporary_keeps_both(jev_on, monkeypatch):
+    _llm_must_not_run(monkeypatch)
+    monkeypatch.setattr(jev, "_post", lambda p: _with_checks("replaces", 1.0, temporary=0.3, same_case=0.95))
+    assert vs._classify("new", "old") == "independent"
+
+
+def test_maybe_same_case_keeps_both(jev_on, monkeypatch):
+    _llm_must_not_run(monkeypatch)
+    monkeypatch.setattr(jev, "_post", lambda p: _with_checks("replaces", 1.0, temporary=0.05, same_case=0.7))
+    assert vs._classify("new", "old") == "independent"
+
+
+def test_high_stakes_bar_is_typesafes_085(jev_on, monkeypatch):
+    monkeypatch.delenv("CAIRN_JEV_MIN_CONFIDENCE", raising=False)
+    _llm_must_not_run(monkeypatch)
+    monkeypatch.setattr(jev, "_post", lambda p: _with_checks("replaces", 0.8, temporary=0.05, same_case=0.95))
+    assert vs._classify("new", "old") == "independent"

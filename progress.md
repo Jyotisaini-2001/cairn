@@ -142,6 +142,26 @@ prompt edit could silently regress quality and we'd never know.
 ---
 
 ## Status log
+- **2026-09-27 (feat/jev, later)** — **Jev hardened against its documented
+  weaknesses; blind testing.** A hard set (`evals/hard_pairs.py`, no giveaway
+  words) and a blind set written by Jyoti (`evals/my_pairs.json`) showed Jev
+  reading literally, as TypeSafe documents for 1.13: it retired permanent rules
+  on reading one-offs ("for this week's launch") and exceptions on reading a
+  restated general rule ("daily standup is at 10:00" vs "async Fridays", 0.96).
+  **V2** asked two yes/no checks in the same call (temporary? same case?).
+  **V3** set every bar from TypeSafe's docs rather than our data — 0.85 for
+  acting on a choice (their high-stakes example), yes > 0.8 / no < 0.2 for the
+  checks — and gave each check true/false descriptions with examples from no
+  test set. Harmful retirements across all sets: 3 → 1 → **0**; ambiguous
+  pairs kept safely 0/4 → 4/4. Cost: 6 real replacements fall in the unsure
+  band and stay live alongside the old one — the band TypeSafe routes to a
+  human, and the planned "does this replace…?" question in Slack. Eval script
+  scores the production decision (`_ask_jev` + `_jev_decide`), handles
+  ambiguous pairs, and `CAIRN_JEV_CHECKS=off` reproduces V1. Findings with every
+  number: `docs/jev-findings.md`. Tests 338. **Blind set #2** (unseen, run on V3): 0 valid rules deleted, 4/4 ambiguous
+  kept, 10/16 clear right, all misses keep-both. Across 70 pairs on V3: zero
+  valid decisions deleted. **Next:** human-in-Slack confirmation for the unsure band; temporary decisions have no
+  expiry (all memory is permanent).
 - **2026-09-27 (feat/jev)** — **First live Slack run with Jev, and a capture bug
   it surfaced.** **(A) Jev works live.** "2-week sprints" then "switched to
   3-week sprints": Jev said `replaces` at confidence 1.00 (482 ms) and #12 was

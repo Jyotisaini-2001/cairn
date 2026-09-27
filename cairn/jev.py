@@ -29,7 +29,7 @@ import os
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 log = logging.getLogger("cairn.jev")
 
@@ -44,6 +44,9 @@ class Choice:
     choice: str
     confidence: float
     probabilities: dict[str, float]
+    # Answers to any yes/no checks asked alongside, as P(yes). A check Jev did
+    # not answer is absent, so callers can tell "no" from "unknown".
+    checks: dict[str, float] = field(default_factory=dict)
 
 
 def enabled() -> bool:
@@ -87,17 +90,23 @@ def _confidence(answer: dict, n_options: int) -> float:
     return max(0.0, (n_options * top - 1) / (n_options - 1))
 
 
-def choice(state: str | dict, instructions: str, criteria: dict[str, str]) -> Choice | None:
+def choice(state: str | dict, instructions: str, criteria: dict[str, str],
+           checks: dict[str, str | dict] | None = None) -> Choice | None:
     """Ask Jev to pick one of ``criteria`` (option -> what it means) for ``state``.
+
+    ``checks`` (name -> statement, or name -> {"instructions", "criteria":
+    {"true", "false"}}) are yes/no questions answered in the same call — same
+    price, same latency. TypeSafe's own guidance for Jev's literal
+    reading is to ask about the exact condition directly rather than hope one
+    broad question covers it.
 
     Returns None on any failure — callers fall back to the LLM path.
     """
-    payload = {
-        "model": _model(),
-        "state": state,
-        "questions": {"q": {"type": "choice", "instructions": instructions,
-                            "criteria": criteria}},
-    }
+    questions = {"q": {"type": "choice", "instructions": instructions, "criteria": criteria}}
+    for name, spec in (checks or {}).items():
+        spec = spec if isinstance(spec, dict) else {"instructions": spec}
+        questions[name] = {"type": "noul", **spec}
+    payload = {"model": _model(), "state": state, "questions": questions}
     started = time.perf_counter()
     for attempt in range(2):
         try:
@@ -116,7 +125,8 @@ def choice(state: str | dict, instructions: str, criteria: dict[str, str]) -> Ch
             log.warning("jev request failed: %s", e)
             return None
 
-    answer = ((data or {}).get("answers") or {}).get("q") or {}
+    answers = (data or {}).get("answers") or {}
+    answer = answers.get("q") or {}
     picked = answer.get("choice")
     if picked not in criteria:
         log.warning("jev returned no usable choice: %r", answer)
@@ -125,9 +135,12 @@ def choice(state: str | dict, instructions: str, criteria: dict[str, str]) -> Ch
         choice=picked,
         confidence=_confidence(answer, len(criteria)),
         probabilities={k: float(v) for k, v in (answer.get("probabilities") or {}).items()},
+        checks={name: float(answers[name]["noul"]) for name in (checks or {})
+                if isinstance((answers.get(name) or {}).get("noul"), (int, float))},
     )
     usage = data.get("usage") or {}
-    log.info("jev model=%s choice=%s confidence=%.2f tokens=%s latency_ms=%d",
-             data.get("model", _model()), result.choice, result.confidence,
+    extra = "".join(f" {k}={v:.2f}" for k, v in result.checks.items())
+    log.info("jev model=%s choice=%s confidence=%.2f%s tokens=%s latency_ms=%d",
+             data.get("model", _model()), result.choice, result.confidence, extra,
              usage.get("input_tokens", "?"), (time.perf_counter() - started) * 1000)
     return result

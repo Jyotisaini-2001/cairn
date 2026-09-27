@@ -161,12 +161,93 @@ def _jev_min_confidence() -> float:
     """Below this, a Jev "duplicate"/"replaces" is treated as "independent".
 
     Both of those verdicts remove a row from recall, and wrongly retiring a live
-    decision is invisible and unrecoverable, so this is the high-stakes end of
-    TypeSafe's guidance (act above ~0.9, never below 0.5). 0.7 is a starting
-    point, not a measurement — `python -m evals.measure_classifier` is how to
-    set it once a key is available.
+    decision is invisible and unrecoverable — a high-stakes action. TypeSafe's
+    confidence-routing pattern acts on high-stakes choices only above 0.85, so
+    that is the default. Deliberately not tuned to our eval sets.
     """
-    return _float_env("CAIRN_JEV_MIN_CONFIDENCE", 0.7)
+    return _float_env("CAIRN_JEV_MIN_CONFIDENCE", 0.85)
+
+
+_JEV_QUESTION = "How does the NEW decision relate to the OLD one?"
+
+# Jev reads text literally (TypeSafe documents it: "scoping words, negations,
+# and implied conditions at face value"). Asked only the question above, it
+# retired a rule on reading a one-off ("for this week's launch, deploy on
+# Saturday") and an exception on reading a restated general rule ("daily
+# standup is at 10:00" vs "standups are async on Fridays"), at up to 1.00
+# confidence — so no confidence bar could catch it. These ask about the exact
+# condition directly, in the same call, as their guidance suggests.
+_JEV_CHECKS = {
+    "temporary": {
+        "instructions": "The NEW decision applies only for a limited time or a single event.",
+        "criteria": {
+            "true": "NEW is limited to a period or an occasion, after which the usual "
+                    "rule applies again, for example 'during the office move, "
+                    "deliveries go to reception' or 'until the audit ends, exports "
+                    "need two approvals'.",
+            "false": "NEW is meant to hold from now on with no end, even if it names "
+                     "a day or a time as part of the rule, for example 'the office "
+                     "opens at 9:00' or 'the newsletter goes out every Monday'.",
+        },
+    },
+    "same_case": {
+        "instructions": "The NEW decision governs exactly the same thing as the OLD "
+                        "decision, so following NEW means OLD can no longer be followed.",
+        "criteria": {
+            "true": "Same thing, same people, same situation, different answer, or NEW "
+                    "explicitly cancels OLD, for example 'the office opens at 9:00' "
+                    "then 'the office opens at 8:30'.",
+            "false": "OLD covers a narrower situation that NEW does not mention (one "
+                     "day, one team, one customer group, one event, one environment), "
+                     "or they govern different aspects, so both can be followed "
+                     "together, for example 'the sales team works remotely on "
+                     "Mondays' then 'the office opens at 9:00'.",
+        },
+    },
+}
+
+# TypeSafe's yes/no guidance: "Raise it when acting on a false yes is expensive…
+# Lower it when missing a true yes is expensive", with yes above 0.8, no below
+# 0.2 and the band between sent to a human. Both checks guard a retirement, so
+# only a clear answer lets it through; the unsure band keeps both for now and
+# is where a "does this replace …?" question to a person belongs later.
+_CLEAR_YES = 0.8
+_CLEAR_NO = 0.2
+
+
+def _jev_checks_enabled() -> bool:
+    return os.environ.get("CAIRN_JEV_CHECKS", "on").strip().lower() not in {"off", "0", "false", "no"}
+
+
+def _ask_jev(new_content: str, old_content: str):
+    from cairn import jev  # noqa: PLC0415
+    return jev.choice(
+        {"old_decision": old_content, "new_decision": new_content},
+        _JEV_QUESTION, _RELATIONS,
+        checks=_JEV_CHECKS if _jev_checks_enabled() else None,
+    )
+
+
+def _jev_decide(verdict, bar: float | None = None) -> str:
+    """Turn Jev's answers into what Cairn does. Every rule here only ever moves
+    toward "independent" (keep both): a wrongly kept row is visible and
+    harmless, a wrongly retired decision is neither."""
+    bar = _jev_min_confidence() if bar is None else bar
+    if verdict.choice != "independent" and verdict.confidence < bar:
+        log.info("jev said %s at confidence %.2f; keeping both",
+                 verdict.choice, verdict.confidence)
+        return "independent"
+    if verdict.choice == "replaces":
+        # A check Jev did not answer is unknown, not a veto.
+        if verdict.checks.get("temporary", 0.0) >= _CLEAR_NO:
+            log.info("jev said replaces, but NEW is not clearly permanent "
+                     "(temporary=%.2f); keeping both", verdict.checks["temporary"])
+            return "independent"
+        if verdict.checks.get("same_case", 1.0) < _CLEAR_YES:
+            log.info("jev said replaces, but NEW is not clearly the same case "
+                     "(same_case=%.2f); keeping both", verdict.checks["same_case"])
+            return "independent"
+    return verdict.choice
 
 
 def _classify(new_content: str, old_content: str) -> str:
@@ -187,22 +268,21 @@ def _classify(new_content: str, old_content: str) -> str:
     from cairn import jev  # noqa: PLC0415
 
     if jev.enabled():
-        verdict = jev.choice(
-            {"old_decision": old_content, "new_decision": new_content},
-            "How does the NEW decision relate to the OLD one?",
-            _RELATIONS,
-        )
+        verdict = _ask_jev(new_content, old_content)
         if verdict is not None:
-            if verdict.choice != "independent" and verdict.confidence < _jev_min_confidence():
-                log.info("jev said %s at confidence %.2f; keeping both",
-                         verdict.choice, verdict.confidence)
-                return "independent"
-            return verdict.choice
+            return _jev_decide(verdict)
         log.info("jev unavailable; classifying with the LLM")
     return _classify_llm(new_content, old_content)
 
 
 def _classify_llm(new_content: str, old_content: str) -> str:
+    return _llm_relation(new_content, old_content) or "independent"
+
+
+def _llm_relation(new_content: str, old_content: str) -> str | None:
+    """The LLM's verdict, or None when the call failed or answered nothing
+    usable. Kept apart from the "independent" fallback so a measurement can
+    tell a failed call from a real answer."""
     from cairn.llm import extract_json  # noqa: PLC0415 (import cycle at module load)
 
     data = extract_json(
@@ -217,7 +297,7 @@ def _classify_llm(new_content: str, old_content: str) -> str:
         max_tokens=64,
     )
     relation = (data or {}).get("relation")
-    return relation if relation in {"duplicate", "replaces", "independent"} else "independent"
+    return relation if relation in {"duplicate", "replaces", "independent"} else None
 
 
 class HybridMemoryStore:
