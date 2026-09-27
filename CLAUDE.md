@@ -4,7 +4,10 @@ This file is auto-loaded each Claude Code session. It is the **entry point** for
 cross-session continuity. Read the linked docs before doing substantive work.
 
 ## Read first (cross-session memory)
-0. **`DIRECTION.md`** — the single committed direction (organizational memory:
+0. **`PRODUCT.md`** — what Cairn is, why it is built this way, the AI concepts
+   used and where, honest strengths and gaps. The one document to read if you
+   need the whole picture (or are explaining the project to someone).
+0b. **`DIRECTION.md`** — the single committed direction (organizational memory:
    "decisions are made in Slack and lost in Slack"). Read it first; it is the
    tie-breaker when a change could pull the project sideways.
 1. **`architecture.md`** — how Cairn is wired (runtime flow, components, the
@@ -19,19 +22,29 @@ the wiring changed, `architecture.md`.** Keep these honest — they are what the
 next session relies on.
 
 ## What Cairn is
-A Slack-native AI agent on Strands Agents. One Strands agent is the only brain;
-two Slack entrypoints (`@mention`, `/loop`). Tools: `slack`, `slack_send_message`,
-`calculator`, `think`, plus long-term memory and optional MCP servers.
+Organizational memory for Slack: it passively captures decisions (with their
+reasoning) from channel conversations and answers "why did we…" with a source
+the model cannot fabricate. One Strands agent is the only brain. Entrypoints:
+`@mention`, DM, `/cairn` + `/loop` slash commands, passive capture, and the
+optional Slack Assistant pane. Tool groups via `CAIRN_TOOLS` (default
+`slack,jira,calculator,decisions`; `think` optional), plus long-term memory and
+optional MCP servers.
 
 ## Key facts (so a fresh session doesn't re-derive them)
-- **Provider = MiniMax M3**, via MiniMax's **Anthropic-compatible** endpoint
-  (`https://api.minimax.io/anthropic`). Strands `AnthropicModel` is just the
-  Anthropic SDK, so this is **env-only — no code change**. Switch back to native
-  Anthropic by changing env. Get a MiniMax key at
-  https://www.minimax.io/platform/user-center/basic-information.
-- **Database = local SQLite** (`DATABASE_PATH`, default `./data/cairn.db`); single
-  `memory_entries` table; `LIKE` substring search; `metadata` is dropped; memory
-  is currently **global** (no per-team/user scoping).
+- **Provider is env-selected** by `CAIRN_MODEL_PROVIDER` (`agent.py::_build_model`):
+  `anthropic` (default; also serves MiniMax M3 via its Anthropic-compatible
+  endpoint `https://api.minimax.io/anthropic`), `gemini`, `openai`, `bedrock`,
+  `ollama`, `litellm`. **The local `.env` currently runs `gemini`** — MiniMax
+  credits ran out mid-project and the switch was env-only.
+- **Database = local SQLite** (`DATABASE_PATH`, default `./data/cairn.db`).
+  `CAIRN_MEMORY_BACKEND=hybrid` (the local setting) adds libSQL vector search in
+  `cairn_vec.db`, fused with FTS5/BM25 via RRF; `sqlite` is FTS5 only. Every
+  memory carries provenance (author/channel/team/date) stamped by the store, not
+  the model. Replaced decisions are retired via `superseded_by`, never deleted.
+  Recall is scoped by `CAIRN_MEMORY_SCOPE` (default `channel`; `team`/`global`).
+  Credentials are redacted in both stores' `add()` before embedding.
+- **Authorization** lives in the DB, managed from Slack (`/cairn allow|deny|who`);
+  only the bootstrap `CAIRN_ADMINS` is in `.env`. Empty lists = no restriction.
 - **Transport = Slack Socket Mode** — each app needs a bot token (xoxb) + an
   app-level token (xapp). **Multi-app:** one process runs N apps via
   `SLACK_BOT_TOKEN_<NAME>`/`SLACK_APP_TOKEN_<NAME>` pairs (bare
