@@ -148,6 +148,27 @@ def _cache_relation(conn, key: str, relation: str) -> None:
         log.debug("could not cache relation verdict")
 
 
+_RELATIONS = {
+    "duplicate": "The same fact in different words; nothing new.",
+    "replaces": "Same question, the answer changed (a limit moved, a tool swapped, "
+                "a policy reversed). The NEW one is current.",
+    "independent": "Different subjects, or complementary facts that can both be "
+                   "true at once.",
+}
+
+
+def _jev_min_confidence() -> float:
+    """Below this, a Jev "duplicate"/"replaces" is treated as "independent".
+
+    Both of those verdicts remove a row from recall, and wrongly retiring a live
+    decision is invisible and unrecoverable, so this is the high-stakes end of
+    TypeSafe's guidance (act above ~0.9, never below 0.5). 0.7 is a starting
+    point, not a measurement — `python -m evals.measure_classifier` is how to
+    set it once a key is available.
+    """
+    return _float_env("CAIRN_JEV_MIN_CONFIDENCE", 0.7)
+
+
 def _classify(new_content: str, old_content: str) -> str:
     """How does the new statement relate to the closest existing one?
 
@@ -158,7 +179,30 @@ def _classify(new_content: str, old_content: str) -> str:
     ``"independent"``, so the worst case is a slightly noisier store rather than
     a live decision wrongly retired — a retired decision stops being answerable
     at all, which is much harder to notice.
+
+    With ``CAIRN_CLASSIFIER=jev`` this is a typed choice with a confidence, and
+    an unsure destructive verdict keeps both; if Jev is unreachable it falls
+    through to the LLM, never to a guess.
     """
+    from cairn import jev  # noqa: PLC0415
+
+    if jev.enabled():
+        verdict = jev.choice(
+            {"old_decision": old_content, "new_decision": new_content},
+            "How does the NEW decision relate to the OLD one?",
+            _RELATIONS,
+        )
+        if verdict is not None:
+            if verdict.choice != "independent" and verdict.confidence < _jev_min_confidence():
+                log.info("jev said %s at confidence %.2f; keeping both",
+                         verdict.choice, verdict.confidence)
+                return "independent"
+            return verdict.choice
+        log.info("jev unavailable; classifying with the LLM")
+    return _classify_llm(new_content, old_content)
+
+
+def _classify_llm(new_content: str, old_content: str) -> str:
     from cairn.llm import extract_json  # noqa: PLC0415 (import cycle at module load)
 
     data = extract_json(
