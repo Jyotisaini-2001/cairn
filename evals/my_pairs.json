@@ -1,0 +1,151 @@
+[
+  {
+    "old": "For the billing service, invoices for nonprofit customers may be generated on the 5th of the month rather than the 1st.",
+    "new": "All invoices should be generated on the 1st of each month. This keeps the billing schedule consistent across customer segments.",
+    "expected": "replaces",
+    "ambiguous": false,
+    "note": "The general billing schedule does not cancel the documented nonprofit exception unless it explicitly addresses that exception. [relabelled 2026-09-27: NEW addresses the exception directly: 'All invoices', 'consistent across customer segments']"
+  },
+  {
+    "old": "During the mobile-app launch, the payments team may deploy its API on Fridays if a production fix is required.",
+    "new": "Production deployments are limited to Monday through Thursday so the support team has coverage for release issues.",
+    "expected": "independent",
+    "ambiguous": true,
+    "note": "The general deployment rule and the launch-specific payments exception can both be true if the exception remains scoped to the launch. [relabelled 2026-09-27: NEW conflicts with the launch exception but never addresses it; could be a restatement]"
+  },
+  {
+    "old": "All production database migrations require approval from the database team.",
+    "new": "The analytics team may run migrations on its staging database without database-team approval.",
+    "expected": "independent",
+    "ambiguous": false,
+    "note": "The later decision defines a staging-specific exception and does not conflict with the production migration requirement."
+  },
+  {
+    "old": "Support tickets marked urgent must receive a response within four hours.",
+    "new": "Tickets assigned to the enterprise support team must receive a response within one business hour.",
+    "expected": "independent",
+    "ambiguous": false,
+    "note": "The enterprise rule applies to a subset of tickets while the urgent-ticket rule can continue to govern other urgent cases."
+  },
+  {
+    "old": "The payments team stores production secrets in AWS Secrets Manager.",
+    "new": "The payments team's staging environment stores secrets in Azure Key Vault.",
+    "expected": "independent",
+    "ambiguous": false,
+    "note": "The decisions concern different environments, so there is no contradiction even though both discuss payments secrets."
+  },
+  {
+    "old": "The customer-success team holds its weekly planning meeting on Tuesday at 10:00 UTC.",
+    "new": "The engineering team holds its weekly planning meeting on Tuesday at 10:00 UTC.",
+    "expected": "independent",
+    "ambiguous": false,
+    "note": "The same time and meeting cadence do not make the decisions equivalent because they concern different teams."
+  },
+  {
+    "old": "We will use PostgreSQL for the order-service database.",
+    "new": "We will use PostgreSQL for the order-service database. The decision is owned by the platform team because they maintain the production cluster.",
+    "expected": "duplicate",
+    "ambiguous": false,
+    "note": "The core decision is unchanged; the later text only adds ownership information."
+  },
+  {
+    "old": "The product review is scheduled for Wednesday at 15:00 UTC.",
+    "new": "The product review is scheduled for Wednesday at 15:00 UTC because the design team needs the morning for user interviews.",
+    "expected": "duplicate",
+    "ambiguous": false,
+    "note": "The meeting time remains identical and the later decision only supplies a reason."
+  },
+  {
+    "old": "We will keep the feature flag enabled for the beta cohort.",
+    "new": "We will keep the feature flag enabled for the beta cohort through Friday, with Priya owning the rollout.",
+    "expected": [
+      "duplicate",
+      "replaces"
+    ],
+    "ambiguous": false,
+    "note": "The later decision preserves the same flag choice and adds a duration and owner rather than changing the decision. [relabelled 2026-09-27: 'through Friday' adds an end date; NEW contains everything OLD said]"
+  },
+  {
+    "old": "The release checklist requires security review, QA approval, and a product sign-off.",
+    "new": "The release checklist requires security review, QA approval, and an engineering sign-off.",
+    "expected": "replaces",
+    "ambiguous": false,
+    "note": "Two checklist requirements remain identical while the required approver for the third requirement is different."
+  },
+  {
+    "old": "The support workflow sends email alerts for high-priority tickets and assigns them to the on-call engineer.",
+    "new": "The support workflow sends email alerts for high-priority tickets and assigns them to the customer-support lead.",
+    "expected": "replaces",
+    "ambiguous": false,
+    "note": "The same workflow has two parts, and the assignment responsibility has a different answer while the alert behavior stays intact."
+  },
+  {
+    "old": "The onboarding process includes a security-training module, manager approval, and a laptop request.",
+    "new": "The onboarding process includes a security-training module, manager approval, and an access-badge request.",
+    "expected": "replaces",
+    "ambiguous": false,
+    "note": "The process has three parts and only the final requested item has a different answer."
+  },
+  {
+    "old": "Customer invoices are generated on the first business day of each month.",
+    "new": "For the September launch campaign, customer invoices will be generated on September 18.",
+    "expected": "independent",
+    "ambiguous": false,
+    "note": "The later decision is explicitly limited to a single campaign period and can coexist with the permanent invoicing rule."
+  },
+  {
+    "old": "Production releases are permitted on weekdays after the release manager approves them.",
+    "new": "For this week's launch, the release team will deploy on Saturday at 09:00 UTC because the customer has requested a weekend rollout.",
+    "expected": "independent",
+    "ambiguous": false,
+    "note": "The Saturday deployment is a temporary launch-specific arrangement and does not establish a different permanent release policy."
+  },
+  {
+    "old": "The weekly engineering review is held on Thursday at 16:00 UTC.",
+    "new": "The weekly engineering review is held on Monday at 16:00 UTC.",
+    "expected": "replaces",
+    "ambiguous": false,
+    "note": "Both statements govern the same recurring meeting and provide different regular meeting times."
+  },
+  {
+    "old": "The recommendation service uses Redis for its feature cache.",
+    "new": "The recommendation service uses Memcached for its feature cache.",
+    "expected": "replaces",
+    "ambiguous": false,
+    "note": "Both decisions answer the same infrastructure question for the same service, with different cache technologies."
+  },
+  {
+    "old": "The design team uses Figma for product mockups.",
+    "new": "The design team uses Figma for product mockups, while the research team uses FigJam for workshop boards.",
+    "expected": [
+      "duplicate",
+      "independent"
+    ],
+    "ambiguous": false,
+    "note": "The original Figma decision remains intact and the later statement adds a separate tool choice for another activity. [relabelled 2026-09-27: NEW adds a separate research-team decision]"
+  },
+  {
+    "old": "All customer data must be encrypted at rest.",
+    "new": "Customer data in the internal analytics warehouse is exempt from encryption at rest because it contains only aggregated metrics.",
+    "expected": "independent",
+    "ambiguous": true,
+    "note": "One reading treats the warehouse statement as a scoped exception to the general rule; another treats it as a conflicting policy that should supersede the broad requirement for that data."
+  },
+  {
+    "old": "The mobile application sends crash reports to Sentry.",
+    "new": "The mobile application sends crash reports to Sentry for production builds; debug builds send them to the internal logging service.",
+    "expected": [
+      "duplicate",
+      "replaces"
+    ],
+    "ambiguous": true,
+    "note": "It can be read as preserving the original production decision while adding a debug case, or as defining the complete rule and narrowing the original statement's scope."
+  },
+  {
+    "old": "The support team will respond to priority-two tickets within eight business hours.",
+    "new": "Priority-two tickets for customers in the enterprise plan receive a response within four business hours.",
+    "expected": "independent",
+    "ambiguous": true,
+    "note": "The later rule can be a narrower service-level exception for enterprise customers, but it could also be interpreted as the applicable response target for that subset and therefore replacing the broader target."
+  }
+]

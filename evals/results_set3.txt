@@ -1,0 +1,77 @@
+
+  classifier: jev (jev-latest)   set: mine   pairs: 53   runs: 2   safety bar: 0.85
+
+  checks: [t = NEW is temporary, s = NEW is about the same case]; replaces only retires when confidence >= 0.85, t < 0.2 and s >= 0.8
+
+  ok* dist 0.222  expect independent            got replaces 1.00 [t0.07 s0.37], replaces 1.00 [t0.07 s0.34] final independent The newer general rule does not cancel the EU contractual requirement; the special case remains valid.
+  ok* dist 0.306  expect independent            got replaces 1.00 [t0.53 s0.69], replaces 1.00 [t0.49 s0.69] final independent The general migration rule can coexist with the earlier temporary exception for billing.
+  ok* dist 0.361  expect independent            got replaces 0.99 [t0.06 s0.29], replaces 0.99 [t0.05 s0.29] final independent The general HSM policy does not explicitly cancel the September Android release procedure, so both can be valid during that release.
+  ok* dist 0.342  expect independent            got replaces 0.70 [t0.06 s0.26], replaces 0.78 [t0.07 s0.24] final independent The second decision creates a team-specific exception rather than changing the general approval requirement.
+  ok* dist 0.184  expect independent            got replaces 0.69 [t0.08 s0.18], replaces 0.66 [t0.08 s0.18] final independent The payments service has a narrower approval path while the general production-access rule can still apply elsewhere.
+  ok* dist 0.354  expect independent            got replaces 0.38 [t0.08 s0.20], independent 0.27 [t0.09 s0.20] final independent The enterprise contractual requirement is a specific exception and does not necessarily invalidate the general retention rule.
+  ok  dist 0.188  expect independent            got independent 0.91 [t0.08 s0.06], independent 0.92 [t0.08 s0.06] final independent The sentences use similar storage terminology but concern different teams and different log systems.
+  ok  dist 0.192  expect independent            got independent 0.99 [t0.07 s0.04], independent 0.98 [t0.06 s0.04] final independent Both decisions mention Redis, but they concern different services and different purposes.
+  ok  dist 0.093  expect independent            got independent 0.34 [t0.08 s0.16], independent 0.29 [t0.08 s0.14] final independent The same tool is selected for two different environments, so both decisions can hold simultaneously.
+  ok  dist 0.089  expect independent            got independent 0.32 [t0.08 s0.20], replaces 0.27 [t0.08 s0.21] final independent The time and topic are similar, but the decisions concern different teams.
+  BAD dist 0.118  expect duplicate              got independent 0.26 [t0.05 s0.19], independent 0.30 [t0.04 s0.18] final independent The later decision preserves the same database choice and adds implementation detail.
+  BAD dist 0.062  expect duplicate              got independent 0.91 [t0.09 s0.13], independent 0.91 [t0.09 s0.14] final independent The original channel-creation decision remains unchanged; the later text adds an owner for another detail.
+  BAD dist 0.088  expect duplicate              got duplicate 0.31 [t0.05 s0.19], duplicate 0.29 [t0.06 s0.21] final independent The duration is identical and the added sentence only explains the reason.
+  BAD dist 0.149  expect duplicate              got independent 0.98 [t0.08 s0.08], independent 0.98 [t0.08 s0.07] final independent The meeting schedule is preserved and the later decision adds ownership detail.
+  BAD dist 0.070  expect duplicate              got independent 0.96 [t0.04 s0.10], independent 0.96 [t0.04 s0.09] final independent Both original decisions remain intact; only an ownership detail is added.
+  ok  dist 0.025  expect replaces               got replaces 1.00 [t0.07 s0.87], replaces 1.00 [t0.07 s0.89] final replaces    The same three-part configuration is being decided, and the retry count is the only conflicting part.
+  ok  dist 0.085  expect replaces               got replaces 1.00 [t0.09 s0.88], replaces 1.00 [t0.08 s0.88] final replaces    The same escalation policy is being defined, with only the response target differing.
+  ok  dist 0.018  expect replaces               got replaces 0.99 [t0.13 s0.80], replaces 1.00 [t0.13 s0.81] final replaces    The later decision defines the same interview process while changing one component.
+  ok  dist 0.127  expect replaces               got replaces 1.00 [t0.07 s0.94], replaces 1.00 [t0.07 s0.94] final replaces    Both decisions answer the same scheduling question for invoice generation, with different dates.
+  ok  dist 0.010  expect replaces               got replaces 1.00 [t0.07 s0.84], replaces 1.00 [t0.06 s0.85] final replaces    The same three design choices are addressed and the button-shape decision conflicts.
+  BAD dist 0.081  expect duplicate              got replaces 0.85 [t0.05 s0.33], replaces 0.90 [t0.04 s0.34] final independent The later decision contains the original requirements and adds the identity of the approver.
+  ok* dist 0.169  expect independent            got replaces 0.82 [t0.97 s0.48], replaces 0.82 [t0.97 s0.47] final independent The later decision introduces a temporary launch-week behavior while explicitly retaining the permanent 60-second rule.
+  ok* dist 0.172  expect independent            got replaces 0.88 [t0.96 s0.22], replaces 0.88 [t0.95 s0.25] final independent The second decision is explicitly limited to a temporary event and does not establish a permanent rate limit.
+  ok* dist 0.266  expect independent            got replaces 0.98 [t0.81 s0.39], replaces 0.98 [t0.82 s0.37] final independent The later decision defines a narrow temporary contingency without removing the permanent source.
+  BAD dist 0.125  expect duplicate              got replaces 0.95 [t0.53 s0.36], replaces 0.95 [t0.56 s0.33] final independent The general schedule remains the same and the later text adds a narrow exception.
+  ok* dist 0.143  expect independent            got replaces 0.91 [t0.92 s0.21], replaces 0.91 [t0.92 s0.20] final independent The later decision describes a one-off operational arrangement rather than a permanent hiring policy.
+  ok  dist 0.128  expect replaces               got replaces 1.00 [t0.07 s0.90], replaces 1.00 [t0.07 s0.89] final replaces    Both decisions specify the representation for the same public API, so the formats conflict.
+  ok  dist 0.238  expect replaces               got replaces 1.00 [t0.16 s0.86], replaces 1.00 [t0.16 s0.85] final replaces    Both decisions specify the interview setting for the same process.
+  ok  dist 0.176  expect replaces               got replaces 1.00 [t0.09 s0.88], replaces 1.00 [t0.08 s0.88] final replaces    The same storage decision for uploaded images has two incompatible destinations.
+  BAD dist 0.060  expect replaces               got replaces 1.00 [t0.10 s0.75], replaces 1.00 [t0.11 s0.76] final independent Both statements define the same approval threshold for support refunds.
+  ok  dist 0.142  expect replaces               got replaces 1.00 [t0.08 s0.87], replaces 1.00 [t0.08 s0.85] final replaces    The same CI system choice is being defined with incompatible tools.
+  ok  dist 0.050  expect replaces               got replaces 1.00 [t0.09 s0.94], replaces 1.00 [t0.09 s0.94] final replaces    Both decisions define the expiration period for the same password-reset links.
+  ok  dist 0.133  expect replaces               got replaces 1.00 [t0.12 s0.81], replaces 1.00 [t0.12 s0.77] final replaces    Both statements specify when the same permission prompt appears in the same app.
+  ok  dist 0.095  expect replaces               got replaces 1.00 [t0.08 s0.85], replaces 1.00 [t0.09 s0.83] final replaces    The two statements assign ownership of the same account to different teams.
+  ok* dist 0.362  expect independent            got replaces 0.68 [t0.08 s0.14], replaces 0.70 [t0.07 s0.14] final independent The later statement can define a service-specific reporting path without necessarily eliminating the broader security reporting requirement.
+  ok  dist 0.318  expect independent            got independent 0.81 [t0.11 s0.13], independent 0.85 [t0.11 s0.11] final independent The decisions concern different review types and can both be followed.
+  ok  dist 0.159  expect independent            got independent 0.72 [t0.15 s0.08], independent 0.72 [t0.13 s0.08] final independent The schedules concern different teams and do not conflict.
+  ok  dist 0.222  expect independent            got independent 0.92 [t0.09 s0.05], independent 0.94 [t0.08 s0.04] final independent Both are hiring-process decisions but apply to different roles.
+  ok  dist 0.254  expect independent            got independent 0.82 [t0.07 s0.12], independent 0.84 [t0.07 s0.11] final independent The second statement is about a specific endpoint and can coexist with the general gateway rule.
+  ok  dist 0.321  expect independent            got independent 0.94 [t0.11 s0.09], independent 0.94 [t0.11 s0.09] final independent The communication choices apply to different teams, so similar wording does not imply a conflict.
+  ok* dist 0.382  expect independent            got replaces 0.93 [t0.82 s0.38], replaces 0.92 [t0.81 s0.40] final independent The user-profile migration is a concrete exception to the general policy.
+  ok* dist 0.144  expect independent            got replaces 0.61 [t0.08 s0.20], replaces 0.51 [t0.08 s0.21] final independent The enterprise SLA can be a customer-specific exception while the eight-hour rule remains applicable to other priority-two tickets.
+  BAD dist 0.155  expect duplicate              got independent 0.97 [t0.04 s0.09], independent 0.97 [t0.04 s0.09] final independent The schedule is unchanged and the later text adds operational ownership and monitoring detail.
+  BAD dist 0.079  expect duplicate              got replaces 0.37 [t0.06 s0.22], replaces 0.27 [t0.06 s0.22] final independent The later policy retains the original threshold and adds a higher-level approval requirement.
+  BAD dist 0.026  expect duplicate              got replaces 0.73 [t0.03 s0.41], replaces 0.74 [t0.03 s0.42] final independent The later sentence clarifies the timezone without changing the intended schedule.
+  ok  dist 0.441  expect independent            got independent 0.72 [t0.05 s0.15], independent 0.77 [t0.05 s0.15] final independent The general recurring schedule does not cancel the previously stated one-off cancellation.
+  BAD dist 0.148  expect duplicate              got independent 0.46 [t0.05 s0.18], independent 0.45 [t0.05 s0.17] final independent The general schedule remains intact while the later text adds a specific account exception.
+  BAD dist 0.129  expect duplicate              got independent 0.98 [t0.06 s0.09], independent 0.98 [t0.06 s0.08] final independent The same tool choice is preserved and only an administrator is specified.
+  ok  dist 0.046  expect replaces               got replaces 0.99 [t0.08 s0.92], replaces 0.99 [t0.08 s0.91] final replaces    Both decisions assign ownership of the same production cluster to different teams.
+  ??  dist 0.113  expect duplicate/independent  got replaces 0.99 [t0.20 s0.38], replaces 0.99 [t0.18 s0.43] final independent One reading treats the later sentence as the same schedule with a contingency; another treats the pending-review clause as a separate conditional decision that can coexist with the original schedule.
+  ??  dist 0.097  expect duplicate/independent  got replaces 0.85 [t0.08 s0.38], replaces 0.83 [t0.09 s0.39] final independent This can be read as the same retention rule with an operational detail, or as a separate deletion exception that modifies the retention policy.
+  ??  dist 0.200  expect independent            got independent 0.49 [t0.12 s0.15], independent 0.54 [t0.12 s0.15] final independent The payments statement can be a team-specific exception to the shared database policy, but it could also be interpreted as a new organization-wide database rule if team scope was omitted.
+  ??  dist 0.162  expect independent            got replaces 0.97 [t0.07 s0.24], replaces 0.98 [t0.07 s0.21] final independent The later statement may define an additional approval requirement for high-risk changes, or it may be intended to define the approval authority for all deployments; the scope is not explicit.
+
+  clear pairs: raw answer right 25/49   final outcome right 36/49   (ok* = rescued by our rules)
+  inconsistent across runs  2/53
+  confusion (expected -> final): {'duplicate->independent': 12, 'replaces->independent': 1}
+
+  ambiguous pairs (4): no right answer — the safe outcome is
+  keeping both, so a debatable decision is never silently retired.
+    kept both  replaces 0.99 [t0.20 s0.38]  One reading treats the later sentence as the same schedule with a contingency; another treats the pending-review clause as a separate conditional decision that can coexist with the original schedule.
+    kept both  replaces 0.85 [t0.08 s0.38]  This can be read as the same retention rule with an operational detail, or as a separate deletion exception that modifies the retention policy.
+    kept both  independent 0.49 [t0.12 s0.15]  The payments statement can be a team-specific exception to the shared database policy, but it could also be interpreted as a new organization-wide database rule if team scope was omitted.
+    kept both  replaces 0.97 [t0.07 s0.24]  The later statement may define an additional approval requirement for high-risk changes, or it may be intended to define the approval authority for all deployments; the scope is not explicit.
+
+  CAIRN_JEV_MIN_CONFIDENCE sweep (clear pairs, run 1):
+    bar    wrong retirements   missed relations
+    0.5           0                  13
+    0.6           0                  13
+    0.7           0                  13
+    0.8           0                  13
+    0.9           0                  13

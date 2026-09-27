@@ -1,0 +1,142 @@
+[
+{
+"old": "Only the security team can approve production firewall changes.",
+"new": "For the incident-response drill, the infrastructure team may approve firewall changes on the isolated test network.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The later decision applies only to an isolated test network during a drill, so it does not conflict with the production rule."
+},
+{
+"old": "The marketing team may publish customer case studies only after legal approval.",
+"new": "Customer case studies require legal approval before publication.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The later statement expresses the same approval requirement without changing its substance."
+},
+{
+"old": "The data platform runs scheduled ETL jobs at 02:00 UTC.",
+"new": "The reporting platform runs scheduled ETL jobs at 02:00 UTC.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The time and activity are identical, but the decisions concern different platforms."
+},
+{
+"old": "Recruiting interviews for backend candidates require one coding round and one system-design round.",
+"new": "Recruiting interviews for backend candidates require one coding round, one system-design round, and an interview with the hiring manager.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The original two requirements are preserved and the later decision adds an additional interview requirement."
+},
+{
+"old": "The checkout service retries failed payment requests three times and records each failure in the audit log.",
+"new": "The checkout service retries failed payment requests five times and records each failure in the audit log.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both statements govern the same retry policy; the retry count has a different value while logging remains unchanged."
+},
+{
+"old": "All engineering teams use Jira for sprint planning.",
+"new": "The developer-tools team uses Linear for sprint planning.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The later decision can be a team-specific exception without changing the planning tool used by the other engineering teams."
+},
+{
+"old": "The finance team reviews expense reports every Friday.",
+"new": "The finance team reviews expense reports every Friday. Anika owns the review and posts the summary in the finance channel.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The review cadence is unchanged; the later statement only adds ownership and reporting details."
+},
+{
+"old": "The API gateway accepts requests with a maximum payload of 5 MB.",
+"new": "The API gateway accepts requests with a maximum payload of 10 MB.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both decisions define the same gateway-wide payload limit, but they specify different limits."
+},
+{
+"old": "Design reviews happen asynchronously in the design channel.",
+"new": "Design reviews happen asynchronously in the design channel, with the product designer responsible for resolving unanswered comments.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The review method and location remain the same; the later statement adds responsibility for unresolved comments."
+},
+{
+"old": "Customer refunds above $500 require finance approval.",
+"new": "Customer refunds above $1,000 require finance approval.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both statements define the approval threshold for the same refund process, but the threshold is different."
+},
+{
+"old": "The authentication service stores session data in DynamoDB.",
+"new": "The authentication service stores session data in Redis.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The same service and data type are involved, and the storage technology is different."
+},
+{
+"old": "The sales team sends contract documents through DocuSign.",
+"new": "The legal team sends contract documents through DocuSign.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The statements concern different teams, so identical tooling does not make one decision a replacement for the other."
+},
+{
+"old": "The incident channel is created automatically for severity-one incidents.",
+"new": "For the database migration exercise, the incident channel is created manually before the exercise begins.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The later statement concerns a specific exercise rather than the normal severity-one incident workflow."
+},
+{
+"old": "Employees receive their equipment on their first day.",
+"new": "Employees receive their equipment on their first day, and workplace operations owns delivery tracking.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The delivery timing is unchanged and the later statement only adds the responsible team."
+},
+{
+"old": "The search service indexes documents every six hours.",
+"new": "The search service indexes documents every hour.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both statements define the same recurring indexing schedule for the same service."
+},
+{
+"old": "The mobile app supports password-based login and Google login.",
+"new": "The mobile app supports password-based login and Apple login.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The two-part authentication decision retains password login but specifies a different social-login provider."
+},
+{
+"old": "The office closes at 18:00 local time.",
+"new": "The office closes at 18:00 local time on weekdays; the support floor remains open until 22:00.",
+"expected": "duplicate",
+"ambiguous": true,
+"note": "One reading treats the support-floor sentence as a scoped addition to the general office rule; another sees it as creating an exception to the closing time for part of the office."
+},
+{
+"old": "All pull requests require two approvals before merging.",
+"new": "Pull requests created by the release automation bot require one approval before merging.",
+"expected": "independent",
+"ambiguous": true,
+"note": "This can reasonably be read as a bot-specific exception to the two-approval rule, but it could also be treated as a conflicting merge policy for that class of pull request."
+},
+{
+"old": "The customer dashboard displays billing and usage information.",
+"new": "The customer dashboard displays billing information; usage information is available in the analytics dashboard.",
+"expected": "replaces",
+"ambiguous": true,
+"note": "The later statement can be interpreted as moving usage information to another dashboard, but it could also describe an additional access path while leaving the original display intact."
+},
+{
+"old": "The team uses the shared staging environment for integration testing.",
+"new": "The team uses a dedicated staging environment for payment integration testing.",
+"expected": "independent",
+"ambiguous": true,
+"note": "The later decision may be a payment-specific environment exception, but without explicit scope it could also be read as replacing the team's staging environment choice."
+}
+]

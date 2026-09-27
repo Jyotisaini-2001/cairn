@@ -1,0 +1,379 @@
+[
+{
+"old": "For the EU launch, customer exports must be encrypted with the customer-specific KMS key.",
+"new": "All customer exports must use the platform KMS key unless a contract requires a customer-specific key.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The newer general rule does not cancel the EU contractual requirement; the special case remains valid."
+},
+{
+"old": "During the mobile-app migration, the billing service may temporarily read from the legacy database.",
+"new": "Services participating in the migration should read from the new database only.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The general migration rule can coexist with the earlier temporary exception for billing."
+},
+{
+"old": "For the September release, Android builds are signed with the release signing key stored in Vault.",
+"new": "All production builds must use signing keys stored in the central HSM.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The general HSM policy does not explicitly cancel the September Android release procedure, so both can be valid during that release."
+},
+{
+"old": "All pull requests require two approvals before merging into the default branch.",
+"new": "The documentation team may merge its own documentation pull requests with one approval.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The second decision creates a team-specific exception rather than changing the general approval requirement."
+},
+{
+"old": "Production database access requires approval from the on-call engineering manager.",
+"new": "For the payments service, production database access requires approval from the payments service owner.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The payments service has a narrower approval path while the general production-access rule can still apply elsewhere."
+},
+{
+"old": "Customer support tickets containing personal data must be deleted after 90 days.",
+"new": "Tickets from enterprise customers under a contractual retention agreement must be retained for the period specified in that agreement.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The enterprise contractual requirement is a specific exception and does not necessarily invalidate the general retention rule."
+},
+{
+"old": "The analytics team stores application logs in the us-east-1 S3 bucket.",
+"new": "The security team stores audit logs in the eu-west-1 S3 bucket.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The sentences use similar storage terminology but concern different teams and different log systems."
+},
+{
+"old": "The checkout service uses Redis for session storage.",
+"new": "The recommendation service uses Redis for feature-cache storage.",
+"expected": "independent",
+"ambiguous": false,
+"note": "Both decisions mention Redis, but they concern different services and different purposes."
+},
+{
+"old": "The staging environment sends email through MailHog.",
+"new": "The development environment sends email through MailHog.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The same tool is selected for two different environments, so both decisions can hold simultaneously."
+},
+{
+"old": "The India support team starts its daily handoff at 5:30 PM IST.",
+"new": "The US support team starts its daily handoff at 5:30 PM IST.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The time and topic are similar, but the decisions concern different teams."
+},
+{
+"old": "We will use PostgreSQL for the reporting service because the queries need relational joins.",
+"new": "We will use PostgreSQL for the reporting service. The schema will keep customer, invoice, and subscription data in separate tables so joins remain straightforward.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The later decision preserves the same database choice and adds implementation detail."
+},
+{
+"old": "The incident channel is created by the on-call engineer.",
+"new": "The incident channel is created by the on-call engineer, and the incident commander owns the channel description.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The original channel-creation decision remains unchanged; the later text adds an owner for another detail."
+},
+{
+"old": "Recruiter screens are scheduled for 30 minutes.",
+"new": "Recruiter screens are scheduled for 30 minutes so candidates receive a consistent initial conversation.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The duration is identical and the added sentence only explains the reason."
+},
+{
+"old": "The weekly product review is on Thursday at 4 PM.",
+"new": "The weekly product review is on Thursday at 4 PM. Maya owns the agenda and sends it the morning before the meeting.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The meeting schedule is preserved and the later decision adds ownership detail."
+},
+{
+"old": "We will keep feature flags in LaunchDarkly and require a ticket for production changes.",
+"new": "We will keep feature flags in LaunchDarkly and require a ticket for production changes. The platform team owns the LaunchDarkly project.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "Both original decisions remain intact; only an ownership detail is added."
+},
+{
+"old": "The API has a 30-second timeout, retries failed requests twice, and logs request IDs.",
+"new": "The API has a 30-second timeout, retries failed requests three times, and logs request IDs.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The same three-part configuration is being decided, and the retry count is the only conflicting part."
+},
+{
+"old": "Support escalations go to the platform team, receive a response within four hours, and are tracked in Jira.",
+"new": "Support escalations go to the platform team, receive a response within eight hours, and are tracked in Jira.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The same escalation policy is being defined, with only the response target differing."
+},
+{
+"old": "The hiring process has a recruiter screen, one coding interview, and one system-design interview.",
+"new": "The hiring process has a recruiter screen, one coding interview, and two system-design interviews.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The later decision defines the same interview process while changing one component."
+},
+{
+"old": "Invoices are generated on the first business day of each month.",
+"new": "Invoices are generated on the third business day of each month.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both decisions answer the same scheduling question for invoice generation, with different dates."
+},
+{
+"old": "The design system uses 8px spacing increments, Inter for UI text, and rounded buttons.",
+"new": "The design system uses 8px spacing increments, Inter for UI text, and square buttons.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The same three design choices are addressed and the button-shape decision conflicts."
+},
+{
+"old": "All production deployments require a successful integration-test suite and a manual approval.",
+"new": "Production deployments require a successful integration-test suite and a manual approval from the release manager.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The later decision contains the original requirements and adds the identity of the approver."
+},
+{
+"old": "The dashboard refreshes every 60 seconds.",
+"new": "The dashboard refreshes every 30 seconds during the launch week; after launch week, it follows the standard 60-second interval.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The later decision introduces a temporary launch-week behavior while explicitly retaining the permanent 60-second rule."
+},
+{
+"old": "Customer-facing API rate limits are 100 requests per minute per account.",
+"new": "For the Black Friday launch weekend, customer-facing API rate limits are 250 requests per minute per account.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The second decision is explicitly limited to a temporary event and does not establish a permanent rate limit."
+},
+{
+"old": "All finance reports are generated from the production warehouse.",
+"new": "During the quarter-end close, finance reports may be generated from the replicated warehouse if the production warehouse is under maintenance.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The later decision defines a narrow temporary contingency without removing the permanent source."
+},
+{
+"old": "The incident review happens every Monday at 10 AM.",
+"new": "The incident review happens every Monday at 10 AM, except during the annual company shutdown when it is skipped.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The general schedule remains the same and the later text adds a narrow exception."
+},
+{
+"old": "New employees receive laptops before their first working day.",
+"new": "For the January office move, new employees starting that week collect laptops from IT on their first working day.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The later decision describes a one-off operational arrangement rather than a permanent hiring policy."
+},
+{
+"old": "The service uses JSON for its public API responses.",
+"new": "The service uses Protocol Buffers for its public API responses.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both decisions specify the representation for the same public API, so the formats conflict."
+},
+{
+"old": "Engineering interviews are conducted remotely.",
+"new": "Engineering interviews are conducted in person at the Bengaluru office.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both decisions specify the interview setting for the same process."
+},
+{
+"old": "The team stores uploaded images in S3.",
+"new": "The team stores uploaded images in Azure Blob Storage.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The same storage decision for uploaded images has two incompatible destinations."
+},
+{
+"old": "Support refunds up to $50 without manager approval.",
+"new": "Support refunds up to $100 without manager approval.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both statements define the same approval threshold for support refunds."
+},
+{
+"old": "The team uses GitHub Actions for CI.",
+"new": "The team uses GitLab CI for CI.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The same CI system choice is being defined with incompatible tools."
+},
+{
+"old": "Password reset links expire after one hour.",
+"new": "Password reset links expire after 15 minutes.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both decisions define the expiration period for the same password-reset links."
+},
+{
+"old": "The mobile app asks for notification permission during onboarding.",
+"new": "The mobile app asks for notification permission after the user creates their first project.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both statements specify when the same permission prompt appears in the same app."
+},
+{
+"old": "Marketing owns the company LinkedIn page.",
+"new": "The employer-branding team owns the company LinkedIn page.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "The two statements assign ownership of the same account to different teams."
+},
+{
+"old": "All security incidents are reported in the security channel.",
+"new": "The payments team reports payment-processing incidents in the payments incident channel.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The later statement can define a service-specific reporting path without necessarily eliminating the broader security reporting requirement."
+},
+{
+"old": "Design reviews happen in Figma comments.",
+"new": "Accessibility reviews happen in GitHub pull requests.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The decisions concern different review types and can both be followed."
+},
+{
+"old": "The backend team deploys on Tuesday and Thursday.",
+"new": "The data team deploys on Wednesday and Friday.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The schedules concern different teams and do not conflict."
+},
+{
+"old": "Candidates for engineering roles complete a coding exercise before the technical interview.",
+"new": "Candidates for product-design roles complete a portfolio review before the design interview.",
+"expected": "independent",
+"ambiguous": false,
+"note": "Both are hiring-process decisions but apply to different roles."
+},
+{
+"old": "The API gateway blocks requests missing an authorization header.",
+"new": "The health-check endpoint accepts requests without an authorization header.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The second statement is about a specific endpoint and can coexist with the general gateway rule."
+},
+{
+"old": "Engineering uses Slack for incident communication.",
+"new": "The customer-success team uses Microsoft Teams for incident communication.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The communication choices apply to different teams, so similar wording does not imply a conflict."
+},
+{
+"old": "All database migrations require a maintenance window.",
+"new": "The user-profile migration will run online without a maintenance window because its schema change is backward compatible.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The user-profile migration is a concrete exception to the general policy."
+},
+{
+"old": "The support team responds to priority-two tickets within eight business hours.",
+"new": "Priority-two tickets from enterprise customers receive a response within four business hours.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The enterprise SLA can be a customer-specific exception while the eight-hour rule remains applicable to other priority-two tickets."
+},
+{
+"old": "The search index is rebuilt every Sunday night.",
+"new": "The search index is rebuilt every Sunday night. The data platform team owns the job and receives an alert if it fails.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The schedule is unchanged and the later text adds operational ownership and monitoring detail."
+},
+{
+"old": "Expense approvals above $5,000 require finance review.",
+"new": "Expense approvals above $5,000 require finance review, with the CFO handling requests above $25,000.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The later policy retains the original threshold and adds a higher-level approval requirement."
+},
+{
+"old": "The data export job runs every night at midnight.",
+"new": "The data export job runs every night at midnight in UTC.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The later sentence clarifies the timezone without changing the intended schedule."
+},
+{
+"old": "The team will not hold the weekly planning meeting on October 2 because the office is closed.",
+"new": "Weekly planning meetings are held on Fridays at 3 PM.",
+"expected": "independent",
+"ambiguous": false,
+"note": "The general recurring schedule does not cancel the previously stated one-off cancellation."
+},
+{
+"old": "The billing service sends invoices at 9 AM on the first business day.",
+"new": "The billing service sends invoices at 9 AM on the first business day. For accounts with monthly closing on the last calendar day, invoices are sent the following business day.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The general schedule remains intact while the later text adds a specific account exception."
+},
+{
+"old": "The support team uses Zendesk for customer tickets.",
+"new": "The support team uses Zendesk for customer tickets, with Priya responsible for administering the Zendesk workspace.",
+"expected": "duplicate",
+"ambiguous": false,
+"note": "The same tool choice is preserved and only an administrator is specified."
+},
+{
+"old": "The platform team owns the production Kubernetes cluster.",
+"new": "The infrastructure team owns the production Kubernetes cluster.",
+"expected": "replaces",
+"ambiguous": false,
+"note": "Both decisions assign ownership of the same production cluster to different teams."
+},
+{
+"old": "The mobile release is scheduled for the second Tuesday of the month.",
+"new": "The mobile release is scheduled for the second Tuesday of the month unless the app-store review is still pending.",
+"expected": [
+"duplicate",
+"independent"
+],
+"ambiguous": true,
+"note": "One reading treats the later sentence as the same schedule with a contingency; another treats the pending-review clause as a separate conditional decision that can coexist with the original schedule."
+},
+{
+"old": "Customer data is retained for seven years.",
+"new": "Customer data is retained for seven years, except records covered by deletion requests are removed when the request is processed.",
+"expected": [
+"duplicate",
+"independent"
+],
+"ambiguous": true,
+"note": "This can be read as the same retention rule with an operational detail, or as a separate deletion exception that modifies the retention policy."
+},
+{
+"old": "Engineering uses the shared staging database for integration testing.",
+"new": "The payments team uses a dedicated staging database for integration testing.",
+"expected": "independent",
+"ambiguous": true,
+"note": "The payments statement can be a team-specific exception to the shared database policy, but it could also be interpreted as a new organization-wide database rule if team scope was omitted."
+},
+{
+"old": "Production deployments require approval from the on-call engineer.",
+"new": "Production deployments require approval from the service owner for high-risk changes.",
+"expected": "independent",
+"ambiguous": true,
+"note": "The later statement may define an additional approval requirement for high-risk changes, or it may be intended to define the approval authority for all deployments; the scope is not explicit."
+}
+]
