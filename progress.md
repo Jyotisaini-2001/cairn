@@ -4,25 +4,32 @@ _Living status doc for cross-session continuity. Update the "Status log" at the
 bottom every working session. Read this + `architecture.md` + `CLAUDE.md` before
 starting work._
 
-## Current status (2026-06-23)
+## Current status (2026-09-24)
 
-- **Stack:** Python ≥3.10, Strands Agents, slack-bolt (Socket Mode), SQLite.
-- **Provider:** migrating to **MiniMax M3** via MiniMax's Anthropic-compatible
-  endpoint — **env-only change, no code change** (see `.env.example`, `architecture.md`).
-- **Shape:** one process can run **several Slack apps** at once (e.g. `Cairn` +
-  `Rasputin_Loop`), each its own agent/persona; three entrypoints per app
-  (`@mention`, DM, `/loop`); tools = `slack`, `slack_send_message`, `calculator`,
-  `think` + long-term memory.
-- **Production readiness:** harness landed (v0.3.0) — step tracing, enforcing
-  guardrails, and a golden-set eval runner. Still missing: authz, PII redaction,
-  thread context, semantic retrieval.
+- **Direction:** organizational memory (`DIRECTION.md`); the whole picture is in
+  `PRODUCT.md`.
+- **Stack:** Python ≥3.10, Strands Agents, slack-bolt (Socket Mode), SQLite +
+  libSQL vectors (hybrid FTS5/BM25 + vector, RRF), fastembed local embeddings.
+- **Provider:** env-selected (`CAIRN_MODEL_PROVIDER`); local `.env` runs
+  **Gemini**. The MiniMax M3 path (Anthropic-compatible endpoint) still works
+  but was left when its credits ran out.
+- **Shape:** one process runs several Slack apps (e.g. `Cairn` +
+  `Rasputin_Loop`), each its own agent/persona. Entrypoints: `@mention`, DM,
+  `/cairn` + `/loop`, passive conversation capture, Assistant pane. Tool groups:
+  `slack,jira,calculator,decisions` (`think` optional) + long-term memory.
+- **Built:** thread-level capture + history backfill, dedup and supersession
+  chains, credential redaction, Slack-managed authorization, decision log,
+  resurfacing, Jira with semantic dedup + decision citations, tracing,
+  guardrails, eval runner. **306 unit tests passing**, 35 golden cases.
+- **Open:** no full eval baseline yet (free-tier quota); slash command, DMs and
+  resurfacing never exercised live (`VERIFY.md` is the script); thresholds
+  measured on a synthetic corpus only; single-workspace; no cost caps;
+  distillation quality unmeasured.
 
-### MiniMax M3 migration — checklist
-- [x] Confirm M3 reachable via Anthropic-compatible API (`https://api.minimax.io/anthropic`).
-- [x] Document env vars + key source in `.env.example`.
-- [ ] Fill real MiniMax key in local `.env` and smoke-test one `@Cairn` mention.
-- [ ] Confirm tool-calling works through MiniMax (slack lookup + add_memory round-trip).
-- [ ] Decide whether to bump the code default model id off `claude-sonnet-4-6`.
+### MiniMax M3 migration — superseded
+Completed as far as it went (M3 verified live through the Anthropic-compatible
+endpoint, including memory add→recall), then superseded by the env-only move to
+Gemini. Kept here for history.
 
 ---
 
@@ -135,6 +142,66 @@ prompt edit could silently regress quality and we'd never know.
 ---
 
 ## Status log
+- **2026-09-27 (feat/jev)** — **First live Slack run with Jev, and a capture bug
+  it surfaced.** **(A) Jev works live.** "2-week sprints" then "switched to
+  3-week sprints": Jev said `replaces` at confidence 1.00 (482 ms) and #12 was
+  retired by #13; it also judged the billing/Postgres memory, which sat inside
+  the 0.45 band at 0.435, `independent` at 1.00 and left it alone. Only one
+  Gemini call in that write (the distillation) — the relation made none.
+  `@Cairn how long are our sprints?` answered 3 weeks with the reasoning and
+  citation, from memory (the wording "proper testing" exists only in #13).
+  **(B) Bug: decisions in a busy channel were dropped.** Outside a thread,
+  capture sends the last 20 channel messages as "the conversation". With two
+  sprint messages and two questions above it, "we decided design reviews happen
+  every Thursday, because…" came back `is_memorable: false` twice; the same two
+  messages alone distilled fine. Nothing was logged, so it looked like a hang.
+  **Fix:** the live path passes the triggering message (`focus_ts`); the prompt
+  marks it `>>>` and says the rest is background for the WHY, and that unrelated
+  topics or open questions there do not make it unresolved. Backfill passes no
+  focus (in a past thread the decision is often not the last line), so its
+  prompt is unchanged. A rejection now logs `capture: model judged it not a
+  decision`. Verified on the real channel: same 6 messages, now distilled to the
+  design-review decision only. Tests 327 (+5).
+  **Open, found in the same run:** (1) passive capture compares against memories
+  in ALL channels — `memory_scope()` is None outside an agent turn — so a
+  decision in one channel could in principle retire one in another; (2) the
+  agent cites a source on "nothing recorded" answers; (3) the hotfix question
+  logged 10,801 input tokens vs 5,387 for the sprint one, both one model call —
+  unexplained.
+- **2026-09-24 (feat/jev)** — **Jev as the duplicate / replaces / independent
+  classifier (priority 1 of the Jev plan).** The relation judgement was an LLM
+  call parsed out of JSON, and it gave opposite verdicts on the same pair across
+  two compaction runs; temperature 0 and the verdict cache were workarounds.
+  Jev (TypeSafe AI, launched 2026-09-15, early access) answers a typed choice
+  with a calibrated confidence and no sampling, which is the shape of the
+  question. **(A)** `cairn/jev.py`: dependency-free client, opt-in via
+  `CAIRN_CLASSIFIER=jev` + `TYPESAFE_API_KEY`, fail-open (`None` → LLM).
+  **(B)** `vector_store._classify` asks Jev first; a `duplicate`/`replaces`
+  below `CAIRN_JEV_MIN_CONFIDENCE` (0.7) is treated as `independent`, because
+  both remove a row from recall and wrongly retiring a live decision is the
+  invisible failure. The LLM prompt moved to `_classify_llm` unchanged.
+  **(C)** `evals/measure_classifier.py` scores either backend on the 14
+  labelled pairs in `threshold_corpus.py`: accuracy, cross-run consistency,
+  wrong retirements vs missed relations, and a confidence-bar sweep for Jev.
+  Not a golden case — the golden runner scores one agent turn, and this is a
+  write-path judgement, so it is covered by `tests/test_jev.py` (+16, **322
+  passing**) and the eval script. **Not run against the real API yet — no key.**
+  0.7 is a starting point; next step is running the eval with a key and setting
+  the bar from the sweep, then comparing against the LLM on the same pairs.
+  Remaining Jev plan, by priority: decision gate (`looks_memorable`),
+  distillation-quality scoring in evals, then bug/action-item/resurface/Jira
+  dedup/grounding checks. Routing was ruled out — it contradicts the
+  single-brain rule.
+- **2026-09-24 (feat/cairn)** — **Docs brought back in line with the code.**
+  `CLAUDE.md` "Key facts" still described the June state (MiniMax as the
+  provider, `LIKE` search, dropped metadata, global memory, old tool list); it
+  now matches what is built. The "Current status" header above was rewritten
+  for the same reason. Added `PRODUCT.md` (the whole picture in one place) and
+  pointed `CLAUDE.md` at it. Two commits had landed after the last log entry
+  without one: **authorization managed from Slack** (`cairn/authz.py`,
+  `/cairn allow|deny|who`, bootstrap `CAIRN_ADMINS`) and **`VERIFY.md`**, a
+  manual Slack test script for the surfaces that have never run live. No code
+  change; 306 tests pass.
 - **2026-08-27 (feat/cairn)** — **Re-measured the dedup/supersession thresholds
   against a realistic corpus; the original numbers were an artefact of a
   three-memory store.**

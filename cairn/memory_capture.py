@@ -220,16 +220,41 @@ def _cooling_down(key: str) -> bool:
     return False
 
 
-def _render(turns: list[dict]) -> str:
-    return "\n".join(f"{t.get('speaker', '?')}: {t.get('text', '')}" for t in turns)
+_FOCUS_MARK = ">>> "
 
 
-def _extract_from_conversation(turns: list[dict]) -> str | None:
+def _render(turns: list[dict], focus_ts: str | None = None) -> str:
+    return "\n".join(
+        f"{_FOCUS_MARK if focus_ts and t.get('ts') == focus_ts else ''}"
+        f"{t.get('speaker', '?')}: {t.get('text', '')}" for t in turns)
+
+
+# Outside a thread the "conversation" is the last N channel messages, which in a
+# live channel is several topics and a few questions. Asked whether *that*
+# reached a decision, the model said no — and a decision posted after two
+# unrelated questions was dropped, while the same two messages alone distilled
+# fine. So the live path names the message being judged; the rest is background.
+_FOCUS_RULES = (
+    "The message marked >>> just arrived and is the one being judged. Decide "
+    "whether IT makes, states or confirms a durable decision. If it is a short "
+    "agreement ('+1', 'ship it', 'yeah do that'), the decision is what it agrees "
+    "to. The other messages are background: use them only for the WHY and what "
+    "was rejected. Unrelated topics or open questions among them do not make the "
+    "marked message unresolved. The memory must describe only the marked "
+    "message's decision.\n\n"
+)
+
+
+def _extract_from_conversation(turns: list[dict], focus_ts: str | None = None) -> str | None:
     """Focused model call over a whole conversation.
 
     Asks for the reasoning explicitly — a memory that records *what* without
     *why* cannot answer the question people actually come back with.
+
+    ``focus_ts`` is the message that tripped the gate (the live path). Backfill
+    passes none: in a past thread the decision is often not the last message.
     """
+    focused = bool(focus_ts) and any(t.get("ts") == focus_ts for t in turns)
     prompt = (
         "Below is a Slack conversation. Decide whether the team reached a durable "
         "DECISION, agreement, or concrete COMMITMENT in it.\n\n"
@@ -243,10 +268,15 @@ def _extract_from_conversation(turns: list[dict]) -> str | None:
         "Set is_memorable=false if the conversation is questions, opinions, "
         "brainstorming with no conclusion, chit-chat, or still unresolved. "
         "Prefer false when in doubt: a noisy memory hurts recall.\n\n"
-        f"Conversation:\n{_render(turns)}"
+        f"{_FOCUS_RULES if focused else ''}"
+        f"Conversation:\n{_render(turns, focus_ts if focused else None)}"
     )
     data = extract_json(prompt, max_tokens=500)
-    if not data or not data.get("is_memorable"):
+    if not data:
+        return None                 # extract_json has already logged the failure
+    if not data.get("is_memorable"):
+        # Logged so a rejection is distinguishable from a hang or a crash.
+        log.info("capture: model judged it not a decision (%d turns)", len(turns))
         return None
     return (data.get("memory") or "").strip() or None
 
@@ -261,6 +291,7 @@ def capture_conversation(
     thread_ts: str | None = None,
     bypass_cooldown: bool = False,
     require_enabled: bool = True,
+    focus_ts: str | None = None,
 ) -> str | None:
     """Distil a conversation into one memory. Returns it, or None.
 
@@ -279,7 +310,7 @@ def capture_conversation(
         log.debug("capture skipped, cooling down: %s", key)
         return None
     try:
-        memory = _extract_from_conversation(turns)
+        memory = _extract_from_conversation(turns, focus_ts=focus_ts)
         if not memory:
             return None
         metadata = {

@@ -413,7 +413,8 @@ def _capture_conversation(client, event: dict, cfg: "AppConfig") -> None:
     # on the message that tripped the gate, and bot messages never reach it.
     memory_capture.capture_conversation(
         turns, author=event.get("user"), channel=channel,
-        team=event.get("team"), source=cfg.name, thread_ts=thread_ts)
+        team=event.get("team"), source=cfg.name, thread_ts=thread_ts,
+        focus_ts=event.get("ts"))
 
 
 def _authorised(ix: obs.Interaction, respond, logger) -> bool:
