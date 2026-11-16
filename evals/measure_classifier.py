@@ -6,6 +6,7 @@
     python -m evals.measure_classifier --set mine --file evals/my_pairs_2.json
     python -m evals.measure_classifier --runs 3        # more runs = better consistency read
     python -m evals.measure_classifier --judge llm     # the LLM judge instead of Jev (uses model quota)
+    python -m evals.measure_classifier --judge llm --llm-model gemini-3.8-flash
 
 Sets:
   easy  threshold_corpus.py — written with cue words ("cut from 24 to 4 hours")
@@ -84,8 +85,29 @@ def judge(old: str, new: str) -> jev.Choice | None:
             time.sleep(2 * (attempt + 1))
         return None
     # LLM path: a failed call must not be scored as its "independent" fallback.
-    relation = vs._llm_relation(new, old)
-    return None if relation is None else jev.Choice(relation, None, {})
+    # Free tiers limit calls per minute (Gemini: 15/min/model), so pace them,
+    # and after a failure wait out the minute once before calling it an error.
+    for attempt in range(2):
+        _pace()
+        relation = vs._llm_relation(new, old)
+        if relation is not None:
+            return jev.Choice(relation, None, {})
+        if attempt == 0:
+            time.sleep(60)
+    return None
+
+
+_last_llm_call = 0.0
+
+
+def _pace() -> None:
+    """Keep LLM calls under CAIRN_EVAL_LLM_PER_MIN (default 12) per minute."""
+    global _last_llm_call
+    gap = 60.0 / max(1.0, float(os.environ.get("CAIRN_EVAL_LLM_PER_MIN", "12")))
+    wait = _last_llm_call + gap - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    _last_llm_call = time.monotonic()
 
 
 def final(v: jev.Choice, bar: float | None) -> str:
@@ -107,11 +129,21 @@ def main() -> None:
     ap.add_argument("--file", type=Path, default=MINE, help="pairs file for --set mine")
     ap.add_argument("--judge", choices=["jev", "llm"],
                     help="override CAIRN_CLASSIFIER from .env (which is loaded with override)")
+    ap.add_argument("--start", type=int, default=1, help="first pair to run (1-based)")
+    ap.add_argument("--limit", type=int, help="run at most this many pairs (daily quotas)")
+    ap.add_argument("--llm-model", help="model for --judge llm, e.g. gemini-3.8-flash "
+                                        "(sets CAIRN_EXTRACT_MODEL for this run only)")
     args = ap.parse_args()
     if args.judge:
         os.environ["CAIRN_CLASSIFIER"] = args.judge
+    if args.llm_model:
+        os.environ["CAIRN_EXTRACT_MODEL"] = args.llm_model
     sys.stdout.reconfigure(line_buffering=True)   # show lines as they come, even through tee
     pairs = load(args.set, args.file)
+    first = max(1, args.start)
+    pairs = pairs[first - 1:first - 1 + args.limit if args.limit else None]
+    if first > 1 or args.limit:
+        print(f"  slice: pairs {first} – {first + len(pairs) - 1}")
 
     emb = get_embedder()
     band = vs._related_distance()
@@ -147,8 +179,8 @@ def main() -> None:
             print(f"  ERR {'Jev unreachable' if jev.enabled() else 'LLM call failed'} — "
                   f"left out of the score: {label}")
             if streak >= 3 and not jev.enabled():
-                print("\n  !! 3 LLM failures in a row — the daily quota is probably used up. "
-                      "Stopping; the lines above are real answers.")
+                print("\n  !! 3 LLM failures in a row, even after waiting — a quota (per minute "
+                      "or per day) is exhausted. Stopping; the lines above are real answers.")
                 break
             continue
         streak = 0

@@ -1,0 +1,5 @@
+
+  classifier: llm (gemini / gemini-3.8-flash)   set: mine   pairs: 53   runs: 1
+
+  BAD dist 0.222  expect independent            got replaces                                     final replaces    The newer general rule does not cancel the EU contractual requirement; the special case remains valid.
+  ERR LLM call failed — left out of the score: The general migration rule can coexist with the earlier temporary exception for billing.

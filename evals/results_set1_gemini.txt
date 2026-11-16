@@ -1,0 +1,34 @@
+
+  classifier: llm (gemini / gemini-flash-lite-latest)   set: mine   pairs: 20   runs: 1
+
+  ok  dist 0.239  expect replaces               got replaces                                     final replaces    The general billing schedule does not cancel the documented nonprofit exception unless it explicitly addresses that exception. [relabelled 2026-09-27: NEW addresses the exception directly: 'All invoices', 'consistent across customer segments']
+  ??  dist 0.318  expect independent            got replaces                                     final replaces    The general deployment rule and the launch-specific payments exception can both be true if the exception remains scoped to the launch. [relabelled 2026-09-27: NEW conflicts with the launch exception but never addresses it; could be a restatement]
+  ok  dist 0.339  expect independent            got independent                                  final independent The later decision defines a staging-specific exception and does not conflict with the production migration requirement.
+  ok  dist 0.178  expect independent            got independent                                  final independent The enterprise rule applies to a subset of tickets while the urgent-ticket rule can continue to govern other urgent cases.
+  ok  dist 0.206  expect independent            got independent                                  final independent The decisions concern different environments, so there is no contradiction even though both discuss payments secrets.
+  ok  dist 0.099  expect independent            got independent                                  final independent The same time and meeting cadence do not make the decisions equivalent because they concern different teams.
+  BAD dist 0.082  expect duplicate              got replaces                                     final replaces    The core decision is unchanged; the later text only adds ownership information.
+  BAD dist 0.105  expect duplicate              got replaces                                     final replaces    The meeting time remains identical and the later decision only supplies a reason.
+  ok  dist 0.126  expect duplicate/replaces     got replaces                                     final replaces    The later decision preserves the same flag choice and adds a duration and owner rather than changing the decision. [relabelled 2026-09-27: 'through Friday' adds an end date; NEW contains everything OLD said]
+  ok  dist 0.046  expect replaces               got replaces                                     final replaces    Two checklist requirements remain identical while the required approver for the third requirement is different.
+  ok  dist 0.069  expect replaces               got replaces                                     final replaces    The same workflow has two parts, and the assignment responsibility has a different answer while the alert behavior stays intact.
+  ok  dist 0.065  expect replaces               got replaces                                     final replaces    The process has three parts and only the final requested item has a different answer.
+  BAD dist 0.244  expect independent            got replaces                                     final replaces    The later decision is explicitly limited to a single campaign period and can coexist with the permanent invoicing rule.
+  BAD dist 0.325  expect independent            got replaces                                     final replaces    The Saturday deployment is a temporary launch-specific arrangement and does not establish a different permanent release policy.
+  ok  dist 0.058  expect replaces               got replaces                                     final replaces    Both statements govern the same recurring meeting and provide different regular meeting times.
+  ok  dist 0.169  expect replaces               got replaces                                     final replaces    Both decisions answer the same infrastructure question for the same service, with different cache technologies.
+  ok  dist 0.078  expect duplicate/independent  got independent                                  final independent The original Figma decision remains intact and the later statement adds a separate tool choice for another activity. [relabelled 2026-09-27: NEW adds a separate research-team decision]
+  ??  dist 0.297  expect independent            got replaces                                     final replaces    One reading treats the warehouse statement as a scoped exception to the general rule; another treats it as a conflicting policy that should supersede the broad requirement for that data.
+  ??  dist 0.093  expect duplicate/replaces     got replaces                                     final replaces    It can be read as preserving the original production decision while adding a debug case, or as defining the complete rule and narrowing the original statement's scope.
+  ??  dist 0.155  expect independent            got independent                                  final independent The later rule can be a narrower service-level exception for enterprise customers, but it could also be interpreted as the applicable response target for that subset and therefore replacing the broader target.
+
+  clear pairs: raw answer right 12/16   final outcome right 12/16   (ok* = rescued by our rules)
+  inconsistent across runs  0/20
+  confusion (expected -> final): {'duplicate->replaces': 2, 'independent->replaces': 2}
+
+  ambiguous pairs (4): no right answer — the safe outcome is
+  keeping both, so a debatable decision is never silently retired.
+    ACTED      replaces  The general deployment rule and the launch-specific payments exception can both be true if the exception remains scoped to the launch. [relabelled 2026-09-27: NEW conflicts with the launch exception but never addresses it; could be a restatement]
+    ACTED      replaces  One reading treats the warehouse statement as a scoped exception to the general rule; another treats it as a conflicting policy that should supersede the broad requirement for that data.
+    ACTED      replaces  It can be read as preserving the original production decision while adding a debug case, or as defining the complete rule and narrowing the original statement's scope.
+    kept both  independent  The later rule can be a narrower service-level exception for enterprise customers, but it could also be interpreted as the applicable response target for that subset and therefore replacing the broader target.

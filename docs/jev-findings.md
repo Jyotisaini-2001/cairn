@@ -237,6 +237,51 @@ both directions, but not fixed.
 | Set 3 | 53 | 13 (13) | 13 (+3 ambiguous) | 0 |
 | **Total** | **123** | | **20 (+11 ambiguous)** | **0** |
 
+### Gemini on the same pairs (blind set #2, all 20 pairs, 2 runs)
+
+The previous judge, `gemini-flash-lite-latest` (which resolved to
+`gemini-3.5-flash-lite`), same prompt Cairn used before Jev, same 20 pairs:
+
+| | Gemini | Jev + rules (V3) |
+|---|---|---|
+| clear pairs, final answer right | 11 / 16 | 10 / 16 |
+| **valid decision deleted** | **1** — "all engineering teams use Jira" retired by "the developer-tools team uses Linear" | **0** |
+| ambiguous pairs decided alone | **2 of 4** | 0 of 4 |
+| answer changed between two runs | **1 of 20** — "bot PRs need one approval" vs "all PRs need two": independent, then replaces | 0 of 20 |
+| harmless misses | 4 (duplicate + owner called "replaces": nothing lost) | 6 (kept both) |
+| a signal of uncertainty to build safety rules on | none | confidence + yes/no checks |
+
+Gemini was better on the two changes Jev's careful rules held back (refund
+threshold, social-login provider), and consistent on all 16 clear pairs. It
+never holds back: it deleted the Jira rule with no hint of doubt, settled two
+debatable cases on its own, and flipped on a borderline one — the failure that
+started this work, reproduced on unseen data. Jev's raw answer was also wrong
+on a similar pair (sales vs legal DocuSign, 0.96); the difference is that Jev's
+answers carry the numbers the safety rules use.
+
+### Gemini on set 3 (53 pairs, 1 run)
+
+| | Gemini | Jev + rules (V3) |
+|---|---|---|
+| clear pairs, final answer right | 27 / 49 | **36 / 49** |
+| retirements made | 36 | 13 |
+| — correct | 14 | 13 |
+| — **valid decision deleted** | **12** | **0** |
+| — duplicate called "replaces" (nothing lost) | 10 | 0 |
+| real replacements caught | 14 / 14 | 13 / 14 |
+| ambiguous pairs decided alone | 3 of 4 | 0 of 4 |
+
+The 12 deletions are exactly the cases Jev's raw answers also got wrong: an
+exception followed by a general rule (6), a temporary change read as
+permanent (4, including one described as "explicitly retaining the permanent
+60-second rule"), and a service-specific path read as replacing the general
+one (2). Raw Jev, with no rules, would have deleted 13 on this set. **The two
+models make the same kind of mistake; the difference is that Jev's answers
+carry confidence and yes/no probabilities, so the mistakes can be caught.**
+
+Free-tier note: the limit hit was **15 requests per minute per model**, not a
+daily cap.
+
 ### What the rules are worth, and what they leave for a person
 
 Acting on Jev's raw answer with no rules, across all 70 pairs: **7 valid

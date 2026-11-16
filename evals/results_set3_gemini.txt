@@ -1,0 +1,67 @@
+
+  classifier: llm (gemini / gemini-flash-lite-latest)   set: mine   pairs: 53   runs: 1
+
+  BAD dist 0.222  expect independent            got replaces                                     final replaces    The newer general rule does not cancel the EU contractual requirement; the special case remains valid.
+  BAD dist 0.306  expect independent            got replaces                                     final replaces    The general migration rule can coexist with the earlier temporary exception for billing.
+  BAD dist 0.361  expect independent            got replaces                                     final replaces    The general HSM policy does not explicitly cancel the September Android release procedure, so both can be valid during that release.
+  BAD dist 0.342  expect independent            got replaces                                     final replaces    The second decision creates a team-specific exception rather than changing the general approval requirement.
+  BAD dist 0.184  expect independent            got replaces                                     final replaces    The payments service has a narrower approval path while the general production-access rule can still apply elsewhere.
+  BAD dist 0.354  expect independent            got replaces                                     final replaces    The enterprise contractual requirement is a specific exception and does not necessarily invalidate the general retention rule.
+  ok  dist 0.188  expect independent            got independent                                  final independent The sentences use similar storage terminology but concern different teams and different log systems.
+  ok  dist 0.192  expect independent            got independent                                  final independent Both decisions mention Redis, but they concern different services and different purposes.
+  ok  dist 0.093  expect independent            got independent                                  final independent The same tool is selected for two different environments, so both decisions can hold simultaneously.
+  ok  dist 0.089  expect independent            got independent                                  final independent The time and topic are similar, but the decisions concern different teams.
+  ok  dist 0.118  expect duplicate              got duplicate                                    final duplicate   The later decision preserves the same database choice and adds implementation detail.
+  BAD dist 0.062  expect duplicate              got replaces                                     final replaces    The original channel-creation decision remains unchanged; the later text adds an owner for another detail.
+  ok  dist 0.088  expect duplicate              got duplicate                                    final duplicate   The duration is identical and the added sentence only explains the reason.
+  BAD dist 0.149  expect duplicate              got replaces                                     final replaces    The meeting schedule is preserved and the later decision adds ownership detail.
+  BAD dist 0.070  expect duplicate              got replaces                                     final replaces    Both original decisions remain intact; only an ownership detail is added.
+  ok  dist 0.025  expect replaces               got replaces                                     final replaces    The same three-part configuration is being decided, and the retry count is the only conflicting part.
+  ok  dist 0.085  expect replaces               got replaces                                     final replaces    The same escalation policy is being defined, with only the response target differing.
+  ok  dist 0.018  expect replaces               got replaces                                     final replaces    The later decision defines the same interview process while changing one component.
+  ok  dist 0.127  expect replaces               got replaces                                     final replaces    Both decisions answer the same scheduling question for invoice generation, with different dates.
+  ok  dist 0.010  expect replaces               got replaces                                     final replaces    The same three design choices are addressed and the button-shape decision conflicts.
+  BAD dist 0.081  expect duplicate              got replaces                                     final replaces    The later decision contains the original requirements and adds the identity of the approver.
+  BAD dist 0.169  expect independent            got replaces                                     final replaces    The later decision introduces a temporary launch-week behavior while explicitly retaining the permanent 60-second rule.
+  BAD dist 0.172  expect independent            got replaces                                     final replaces    The second decision is explicitly limited to a temporary event and does not establish a permanent rate limit.
+  BAD dist 0.266  expect independent            got replaces                                     final replaces    The later decision defines a narrow temporary contingency without removing the permanent source.
+  BAD dist 0.125  expect duplicate              got replaces                                     final replaces    The general schedule remains the same and the later text adds a narrow exception.
+  BAD dist 0.143  expect independent            got replaces                                     final replaces    The later decision describes a one-off operational arrangement rather than a permanent hiring policy.
+  ok  dist 0.128  expect replaces               got replaces                                     final replaces    Both decisions specify the representation for the same public API, so the formats conflict.
+  ok  dist 0.238  expect replaces               got replaces                                     final replaces    Both decisions specify the interview setting for the same process.
+  ok  dist 0.176  expect replaces               got replaces                                     final replaces    The same storage decision for uploaded images has two incompatible destinations.
+  ok  dist 0.060  expect replaces               got replaces                                     final replaces    Both statements define the same approval threshold for support refunds.
+  ok  dist 0.142  expect replaces               got replaces                                     final replaces    The same CI system choice is being defined with incompatible tools.
+  ok  dist 0.050  expect replaces               got replaces                                     final replaces    Both decisions define the expiration period for the same password-reset links.
+  ok  dist 0.133  expect replaces               got replaces                                     final replaces    Both statements specify when the same permission prompt appears in the same app.
+  ok  dist 0.095  expect replaces               got replaces                                     final replaces    The two statements assign ownership of the same account to different teams.
+  BAD dist 0.362  expect independent            got replaces                                     final replaces    The later statement can define a service-specific reporting path without necessarily eliminating the broader security reporting requirement.
+  ok  dist 0.318  expect independent            got independent                                  final independent The decisions concern different review types and can both be followed.
+  ok  dist 0.159  expect independent            got independent                                  final independent The schedules concern different teams and do not conflict.
+  ok  dist 0.222  expect independent            got independent                                  final independent Both are hiring-process decisions but apply to different roles.
+  ok  dist 0.254  expect independent            got independent                                  final independent The second statement is about a specific endpoint and can coexist with the general gateway rule.
+  ok  dist 0.321  expect independent            got independent                                  final independent The communication choices apply to different teams, so similar wording does not imply a conflict.
+  BAD dist 0.382  expect independent            got replaces                                     final replaces    The user-profile migration is a concrete exception to the general policy.
+  ok  dist 0.144  expect independent            got independent                                  final independent The enterprise SLA can be a customer-specific exception while the eight-hour rule remains applicable to other priority-two tickets.
+  BAD dist 0.155  expect duplicate              got replaces                                     final replaces    The schedule is unchanged and the later text adds operational ownership and monitoring detail.
+  BAD dist 0.079  expect duplicate              got replaces                                     final replaces    The later policy retains the original threshold and adds a higher-level approval requirement.
+  BAD dist 0.026  expect duplicate              got replaces                                     final replaces    The later sentence clarifies the timezone without changing the intended schedule.
+  ok  dist 0.441  expect independent            got independent                                  final independent The general recurring schedule does not cancel the previously stated one-off cancellation.
+  BAD dist 0.148  expect duplicate              got replaces                                     final replaces    The general schedule remains intact while the later text adds a specific account exception.
+  BAD dist 0.129  expect duplicate              got replaces                                     final replaces    The same tool choice is preserved and only an administrator is specified.
+  ok  dist 0.046  expect replaces               got replaces                                     final replaces    Both decisions assign ownership of the same production cluster to different teams.
+  ??  dist 0.113  expect duplicate/independent  got replaces                                     final replaces    One reading treats the later sentence as the same schedule with a contingency; another treats the pending-review clause as a separate conditional decision that can coexist with the original schedule.
+  ??  dist 0.097  expect duplicate/independent  got replaces                                     final replaces    This can be read as the same retention rule with an operational detail, or as a separate deletion exception that modifies the retention policy.
+  ??  dist 0.200  expect independent            got independent                                  final independent The payments statement can be a team-specific exception to the shared database policy, but it could also be interpreted as a new organization-wide database rule if team scope was omitted.
+  ??  dist 0.162  expect independent            got replaces                                     final replaces    The later statement may define an additional approval requirement for high-risk changes, or it may be intended to define the approval authority for all deployments; the scope is not explicit.
+
+  clear pairs: raw answer right 27/49   final outcome right 27/49   (ok* = rescued by our rules)
+  inconsistent across runs  0/53
+  confusion (expected -> final): {'independent->replaces': 12, 'duplicate->replaces': 10}
+
+  ambiguous pairs (4): no right answer — the safe outcome is
+  keeping both, so a debatable decision is never silently retired.
+    ACTED      replaces  One reading treats the later sentence as the same schedule with a contingency; another treats the pending-review clause as a separate conditional decision that can coexist with the original schedule.
+    ACTED      replaces  This can be read as the same retention rule with an operational detail, or as a separate deletion exception that modifies the retention policy.
+    kept both  independent  The payments statement can be a team-specific exception to the shared database policy, but it could also be interpreted as a new organization-wide database rule if team scope was omitted.
+    ACTED      replaces  The later statement may define an additional approval requirement for high-risk changes, or it may be intended to define the approval authority for all deployments; the scope is not explicit.

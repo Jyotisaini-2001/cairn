@@ -1,0 +1,34 @@
+
+  classifier: llm (gemini / gemini-flash-lite-latest)   set: mine   pairs: 20   runs: 2
+
+  ok  dist 0.392  expect independent            got independent, independent                     final independent The later decision applies only to an isolated test network during a drill, so it does not conflict with the production rule.
+  ok  dist 0.185  expect duplicate              got duplicate, duplicate                         final duplicate   The later statement expresses the same approval requirement without changing its substance.
+  ok  dist 0.030  expect independent            got independent, independent                     final independent The time and activity are identical, but the decisions concern different platforms.
+  BAD dist 0.023  expect duplicate              got replaces, replaces                           final replaces    The original two requirements are preserved and the later decision adds an additional interview requirement.
+  ok  dist 0.080  expect replaces               got replaces, replaces                           final replaces    Both statements govern the same retry policy; the retry count has a different value while logging remains unchanged.
+  BAD dist 0.331  expect independent            got replaces, replaces                           final replaces    The later decision can be a team-specific exception without changing the planning tool used by the other engineering teams.
+  BAD dist 0.133  expect duplicate              got replaces, replaces                           final replaces    The review cadence is unchanged; the later statement only adds ownership and reporting details.
+  ok  dist 0.107  expect replaces               got replaces, replaces                           final replaces    Both decisions define the same gateway-wide payload limit, but they specify different limits.
+  BAD dist 0.075  expect duplicate              got replaces, replaces                           final replaces    The review method and location remain the same; the later statement adds responsibility for unresolved comments.
+  ok  dist 0.079  expect replaces               got replaces, replaces                           final replaces    Both statements define the approval threshold for the same refund process, but the threshold is different.
+  ok  dist 0.141  expect replaces               got replaces, replaces                           final replaces    The same service and data type are involved, and the storage technology is different.
+  ok  dist 0.051  expect independent            got independent, independent                     final independent The statements concern different teams, so identical tooling does not make one decision a replacement for the other.
+  ok  dist 0.227  expect independent            got independent, independent                     final independent The later statement concerns a specific exercise rather than the normal severity-one incident workflow.
+  BAD dist 0.102  expect duplicate              got replaces, replaces                           final replaces    The delivery timing is unchanged and the later statement only adds the responsible team.
+  ok  dist 0.081  expect replaces               got replaces, replaces                           final replaces    Both statements define the same recurring indexing schedule for the same service.
+  ok  dist 0.055  expect replaces               got replaces, replaces                           final replaces    The two-part authentication decision retains password login but specifies a different social-login provider.
+  ??  dist 0.136  expect duplicate              got replaces, replaces                           final replaces    One reading treats the support-floor sentence as a scoped addition to the general office rule; another sees it as creating an exception to the closing time for part of the office.
+  ??  dist 0.159  expect independent            got independent, replaces                        final independent This can reasonably be read as a bot-specific exception to the two-approval rule, but it could also be treated as a conflicting merge policy for that class of pull request.
+  ??  dist 0.057  expect replaces               got replaces, replaces                           final replaces    The later statement can be interpreted as moving usage information to another dashboard, but it could also describe an additional access path while leaving the original display intact.
+  ??  dist 0.155  expect independent            got independent, independent                     final independent The later decision may be a payment-specific environment exception, but without explicit scope it could also be read as replacing the team's staging environment choice.
+
+  clear pairs: raw answer right 11/16   final outcome right 11/16   (ok* = rescued by our rules)
+  inconsistent across runs  1/20
+  confusion (expected -> final): {'duplicate->replaces': 4, 'independent->replaces': 1}
+
+  ambiguous pairs (4): no right answer — the safe outcome is
+  keeping both, so a debatable decision is never silently retired.
+    ACTED      replaces  One reading treats the support-floor sentence as a scoped addition to the general office rule; another sees it as creating an exception to the closing time for part of the office.
+    kept both  independent  This can reasonably be read as a bot-specific exception to the two-approval rule, but it could also be treated as a conflicting merge policy for that class of pull request.
+    ACTED      replaces  The later statement can be interpreted as moving usage information to another dashboard, but it could also describe an additional access path while leaving the original display intact.
+    kept both  independent  The later decision may be a payment-specific environment exception, but without explicit scope it could also be read as replacing the team's staging environment choice.
