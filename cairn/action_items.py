@@ -1,6 +1,6 @@
-"""Action-item extraction and tracking for Loop.
+"""Action-item extraction and tracking for Cairn.
 
-When someone says "John will fix X by Friday" in Slack, Loop detects it,
+When someone says "John will fix X by Friday" in Slack, Cairn detects it,
 extracts owner/task/deadline, stores it, and nudges the owner as the deadline
 approaches via ambient mode.
 
@@ -22,10 +22,10 @@ import threading
 import time
 from pathlib import Path
 
-from loop.llm import extract_json, first_human_mention
-from loop.storage import DEFAULT_DB_PATH
+from cairn.llm import extract_json, first_human_mention
+from cairn.storage import DEFAULT_DB_PATH
 
-log = logging.getLogger("loop.actions")
+log = logging.getLogger("cairn.actions")
 
 _lock = threading.RLock()  # reentrant: save_action_item() calls _already_saved() under the same lock
 _conn: sqlite3.Connection | None = None
@@ -137,7 +137,7 @@ def save_action_item(
     """Persist an extracted action item. Returns the new row id."""
     with _lock:
         if _already_saved(channel, thread_ts, item["task"]):
-            log.info("loop.actions: skipping duplicate action item task=%r", item["task"][:60])
+            log.info("cairn.actions: skipping duplicate action item task=%r", item["task"][:60])
             return -1
         conn = _db()
         cur = conn.execute(
@@ -153,7 +153,7 @@ def save_action_item(
             ),
         )
         conn.commit()
-        log.info("loop.actions: saved action item id=%d task=%r owner=%r deadline=%s",
+        log.info("cairn.actions: saved action item id=%d task=%r owner=%r deadline=%s",
                  cur.lastrowid, item["task"][:60], item.get("owner_name"), item.get("deadline_raw"))
         return cur.lastrowid
 

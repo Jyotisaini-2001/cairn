@@ -5,16 +5,16 @@
 **If you are a fresh session picking this up: read this file top to bottom, then `progress.md`.**
 
 ## Decisions taken this session
-1. **Base = `development` HEAD, NOT 663e9a2.** The post-663e9a2 breakage (loop.db
+1. **Base = `development` HEAD, NOT 663e9a2.** The post-663e9a2 breakage (cairn.db
    unopenable, readonly-DB telemetry, WAL confusion) was *environmental*, not code:
-   `data/loop.db` + `data/loop_vec.db` are **tracked in git** (deliberate `.gitignore`
+   `data/cairn.db` + `data/cairn_vec.db` are **tracked in git** (deliberate `.gitignore`
    exceptions), so every checkout/stash swaps the DB inode under a live process →
    wedged connections → "readonly database" → the whole WAL saga. HEAD also contains
    fixes worth keeping (name-first assignee, <think> stripping, dedup refactor).
    Fix the root cause (untrack DBs) instead of rewinding 11 commits.
 2. Live verification is mandatory: run `loop` itself + read its logs (the failure
    mode of previous sessions was never running the app).
-3. Ambient mode is ON in `.env` — force `LOOP_AMBIENT=off` for any test runs so the
+3. Ambient mode is ON in `.env` — force `CAIRN_AMBIENT=off` for any test runs so the
    bot doesn't post nudges into the workspace mid-test.
 
 ## Task list (status updated as work lands)
@@ -30,24 +30,24 @@
 ## Facts a fresh session needs
 - `.env` (gitignored, DO NOT commit): 2 Slack apps (rasputin = bare tokens,
   loop = `_LOOP` suffixed), MiniMax M3 via `ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic`,
-  `LOOP_MEMORY_BACKEND=hybrid`, Jira = jyotisworkspace-33955498.atlassian.net,
+  `CAIRN_MEMORY_BACKEND=hybrid`, Jira = jyotisworkspace-33955498.atlassian.net,
   auth user js.saini267@gmail.com (this is why tickets "default" to that email —
   it's the reporter/auth identity, not an assignee fallback; code has NO default-email
   assignee fallback: unresolved → unassigned + visible flag).
 - `.env` header says tokens were shared in chat → **rotate all tokens before
   marketplace submission**.
-- Committed `data/loop.db` is a stale snapshot (schema even lacks the
+- Committed `data/cairn.db` is a stale snapshot (schema even lacks the
   reasoning/response columns — they're added by runtime migration).
 - No stale `loop` processes were running at session start (checked ps).
 
 ## 🚨 CRITICAL DISCOVERY — a GHOST PROCESS is answering Slack events
 A second `loop` instance built from ~663e9a2-era code (staging message has no
-`Project:` line — matches `git show 096f67e:loop/slack_app.py`) is connected to
+`Project:` line — matches `git show 096f67e:cairn/slack_app.py`) is connected to
 the SAME Rasputin app token from ANOTHER machine (not this one: lsof/ps clean).
 Slack Socket Mode round-robins events across connections, so ~half of all live
 tests hit pre-fix code. **This explains every "the fix didn't work" report from
 previous sessions** (assignee misrouting, thinking leaks, etc.).
-**Fix: regenerate the Rasputin app-level token (and Loop's too) at
+**Fix: regenerate the Rasputin app-level token (and Cairn's too) at
 api.slack.com/apps → Basic Information → App-Level Tokens, update `.env`.**
 The ghost then can't reconnect. Until that happens, any live Slack test may be
 answered by the ghost — check the local log for the request id to attribute.
@@ -63,10 +63,10 @@ answered by the ghost — check the local log for the request id to attribute.
 
 ## Fixes landed this session
 1. b3eb3f2 — data/*.db untracked from git (the WAL/readonly root cause).
-2. 198a6dc — thinking param (LOOP_THINKING_BUDGET, default 1024) so
+2. 198a6dc — thinking param (CAIRN_THINKING_BUDGET, default 1024) so
    interactions.reasoning fills; MiniMax stopped emitting inline <think> and
    only returns thinking blocks when asked. + BOT_IDS unhardcoded (auth.test
-   self-registration + LOOP_BOT_USER_IDS seed).
+   self-registration + CAIRN_BOT_USER_IDS seed).
 3. (pending commit) placeholder ids in docstrings; architecture.md updated.
 
 ## What the commit history says you were building (task 2)
@@ -74,7 +74,7 @@ The arc, in order — each stage kept the "one Strands agent is the only brain" 
 1. **MVP: a Slack memory layer** (60ee78d→6ea173f) — MCP, Block Kit, follow-ups;
    heuristics replaced by a real LLM agent loop.
 2. **Strands-native rewrite** (84010f0) — Python, one agent, tools = slack/memory.
-3. **Production harness v0.3** (2bc7194→663e9a2) — multi-app (Loop+Rasputin), file/
+3. **Production harness v0.3** (2bc7194→663e9a2) — multi-app (Cairn+Rasputin), file/
    multimodal input, telemetry (interactions+steps), guardrails, golden evals.
    Framing: the 5 Pillars of Production AI; observability+evals before features.
 4. **Memory as the moat** (b168c5b→62bed64, v0.4) — episodic provenance-stamped
@@ -93,11 +93,11 @@ The arc, in order — each stage kept the "one Strands agent is the only brain" 
 - Jira assign-by-name + name-first priority: ✅ live (KAN-22 → ISHAN KUMAR).
 - Project resolution ("KAN"), dedup check, staging, confirm flow: ✅ live.
 - Thinking hidden from Slack + persisted to DB: ✅ live (fixed this session —
-  MiniMax now requires the thinking param; see LOOP_THINKING_BUDGET).
+  MiniMax now requires the thinking param; see CAIRN_THINKING_BUDGET).
 - Telemetry auto-reconnect: ✅ unit-tested (4 tests); root cause also removed
   (DBs untracked).
 - Action items / passive memory capture / multi-MCP: ✅ unit-tested; OFF in
-  current .env (LOOP_ACTION_ITEMS / LOOP_MEMORY_CAPTURE unset, no MCP servers
+  current .env (CAIRN_ACTION_ITEMS / CAIRN_MEMORY_CAPTURE unset, no MCP servers
   configured). Enable before demoing those.
 - Journal mode DELETE (external viewers): ✅ code + live DB opens fine.
 - Redundant-code note: 5940f68 already deduped the append-era duplication
@@ -148,14 +148,14 @@ visible flag. To change the reporter, use a token from a different Jira account.
 - Live: KAN-22 assigned to ISHAN KUMAR from bare name "ishan" — full pipeline.
 - Artifact (hackathon field guide) published:
   https://claude.ai/code/artifact/592bb186-c99b-4dbd-a952-299e1287c7a8
-- A `loop` process (current code, LOOP_AMBIENT=off) was LEFT RUNNING (pid 39369,
+- A `loop` process (current code, CAIRN_AMBIENT=off) was LEFT RUNNING (pid 39369,
   log: scratchpad loop_live.log) so current-code answers keep flowing; restart
   with plain `loop` for ambient per .env. Test tickets created today: KAN-19..23
   (KAN-21 "Bug" and others were the GHOST's work; KAN-23 was the eval before the
   Jira-inert fix) — clean up in Jira at leisure.
 
 ## Round 2 (same day, user follow-ups) — all verified
-- **Thinking persisted per interaction:** confirmed in loop.db — every row since
+- **Thinking persisted per interaction:** confirmed in cairn.db — every row since
   the fix has reasoning (445/246/1316 chars); row 16 was the pre-fix control.
 - **Ambient verified live:** daemon scanned #new-channel, correctly NOOPed a
   resolved thread (telemetry row `rasputin:ambient`, reasoning captured). Note:
@@ -163,8 +163,8 @@ visible flag. To change the reporter, use a token from a different Jira account.
   re-nudge guard for that thread. Posting path: live-verified 2026-07-01 + 5
   unit tests. To demo a nudge: human asks an unanswered question, stale=0.
 - **Passive capture → vector DB verified + ENABLED:** capture() distilled a
-  decision into loop_vec.db row 7 (kind=decision, provenance, embedding).
-  `LOOP_MEMORY_CAPTURE=on` now set in .env. Before this, ONLY agent turns
+  decision into cairn_vec.db row 7 (kind=decision, provenance, embedding).
+  `CAIRN_MEMORY_CAPTURE=on` now set in .env. Before this, ONLY agent turns
   (@mention/DM/assistant) wrote memory; ambient never writes memory.
 - **Slack screenshot:** the 4 bug-report messages in #new-channel were this
   session's tests (round-robin probe + KAN-22 flow) — safe to delete.
@@ -176,17 +176,17 @@ visible flag. To change the reporter, use a token from a different Jira account.
   never read by code; 13/13 required vars set in .env.
 - **Showcase pages repo-tracked:** docs/presentation.html (new keynote-scroll
   design for the stage) + docs/field-guide.html (knowledge base). README gained
-  Showcase links, mermaid runtime flowchart + loop.db ER diagram; stale
-  "committed loop.db" claim fixed; users:read.email scope documented.
+  Showcase links, mermaid runtime flowchart + cairn.db ER diagram; stale
+  "committed cairn.db" claim fixed; users:read.email scope documented.
   Artifacts: presentation https://claude.ai/code/artifact/41a07752-4981-4697-9f47-2149fbe354cb ·
   field guide https://claude.ai/code/artifact/592bb186-c99b-4dbd-a952-299e1287c7a8
 - **No loop process left running** (test processes stopped). Start: `loop`
-  (or `python -m loop.main`). Stop: Ctrl+C, or `pkill -f "loop.main"`.
+  (or `python -m cairn.main`). Stop: Ctrl+C, or `pkill -f "cairn.main"`.
 
 ## Log
 - (start) Investigated repo, read jira_tool/observability/agent/tracing/storage,
   confirmed DB-in-git root cause, created branch + this doc.
-- Ran `loop` live (LOOP_AMBIENT=off), both apps connected; discovered ghost
+- Ran `loop` live (CAIRN_AMBIENT=off), both apps connected; discovered ghost
   process mid-test via old-format staging reply + missing log line.
 - Fixed reasoning telemetry (thinking param), BOT_IDS hardcoding, eval truth
   bugs (phantom tools, history carryover), eval Jira side-effects. Verified

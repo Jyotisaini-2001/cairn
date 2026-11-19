@@ -12,19 +12,19 @@ import os
 
 
 def _stub_projects(monkey: list[tuple[str, str]]):
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     jt._list_projects = lambda: monkey  # type: ignore[assignment]
 
 
 def _stub_users(members: list[dict]):
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     jt._slack_users = lambda: members  # type: ignore[assignment]
 
 
 def test_resolve_project_key_matches_key_and_name() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     os.environ["JIRA_PROJECT_KEY"] = "KAN"
     _stub_projects([("KAN", "Kanban"), ("BAN", "Banana Board")])
@@ -35,7 +35,7 @@ def test_resolve_project_key_matches_key_and_name() -> None:
 
 
 def test_resolve_project_key_falls_back_to_default_with_note() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     os.environ["JIRA_PROJECT_KEY"] = "KAN"
     _stub_projects([("KAN", "Kanban")])
@@ -45,14 +45,14 @@ def test_resolve_project_key_falls_back_to_default_with_note() -> None:
 
 
 def test_resolve_project_key_trusts_input_when_list_unavailable() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     _stub_projects([])  # e.g. API failure — must not block filing
     assert jt.resolve_project_key("ZZZ") == ("ZZZ", None)
 
 
 def test_resolve_project_key_empty_uses_default() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     os.environ["JIRA_PROJECT_KEY"] = "KAN"
     _stub_projects([("KAN", "Kanban")])
@@ -64,12 +64,12 @@ _MEMBERS = [
     {"name": "jverma", "real_name": "Jyoti Verma", "profile": {"email": "jv@x.com", "real_name": "Jyoti Verma"}},
     {"name": "john", "real_name": "John Doe", "profile": {"email": "john@x.com", "display_name": "john"}},
     {"deleted": True, "profile": {"email": "gone@x.com", "real_name": "Ghost"}},
-    {"is_bot": True, "profile": {"email": "bot@x.com", "real_name": "Loop Bot"}},
+    {"is_bot": True, "profile": {"email": "bot@x.com", "real_name": "Cairn Bot"}},
 ]
 
 
 def test_email_from_full_name_unique() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     _stub_users(_MEMBERS)
     assert jt._slack_email_from_name("Jyoti Saini") == "js@x.com"
@@ -77,7 +77,7 @@ def test_email_from_full_name_unique() -> None:
 
 
 def test_email_from_first_name_unique() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     _stub_users(_MEMBERS)
     assert jt._slack_email_from_name("John") == "john@x.com"
@@ -85,7 +85,7 @@ def test_email_from_first_name_unique() -> None:
 
 
 def test_email_ambiguous_first_name_returns_none() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     _stub_users(_MEMBERS)
     # Two people whose first name is "Jyoti" and no exact username/display match.
@@ -93,16 +93,16 @@ def test_email_ambiguous_first_name_returns_none() -> None:
 
 
 def test_email_excludes_bots_and_deleted() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     _stub_users(_MEMBERS)
     assert jt._slack_email_from_name("Ghost") is None
-    assert jt._slack_email_from_name("Loop Bot") is None
+    assert jt._slack_email_from_name("Cairn Bot") is None
     assert jt._slack_email_from_name("Nobody") is None
 
 
 def test_resolve_assignee_email_name_first() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     _stub_users(_MEMBERS)
     # A resolvable NAME wins over a passed email — the model often echoes the
@@ -118,7 +118,7 @@ def test_resolve_assignee_email_name_first() -> None:
 def test_name_beats_requester_slack_mention() -> None:
     """Reproduces the live bug: the agent passed assignee_name='Jyoti' AND the
     requester's slack_mention; the ticket must go to Jyoti, not the requester."""
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     _stub_users(_MEMBERS)
     jt._slack_email_from_user_id = lambda uid: "requester@x.com"  # the spurious requester
@@ -127,7 +127,7 @@ def test_name_beats_requester_slack_mention() -> None:
 
 
 def test_assignee_notes() -> None:
-    import loop.jira_tool as jt
+    import cairn.jira_tool as jt
 
     inline, flag = jt._assignee_notes({"assignee": {"accountId": "1"}}, "js@x.com", "Jyoti Saini")
     assert inline == ", assigned to js@x.com" and flag == ""

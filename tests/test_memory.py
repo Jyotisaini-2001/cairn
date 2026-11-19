@@ -1,4 +1,4 @@
-"""Tests for Loop's episodic, provenance-stamped, FTS5-backed memory store.
+"""Tests for Cairn's episodic, provenance-stamped, FTS5-backed memory store.
 
 Runnable two ways:
     python -m tests.test_memory       # plain runner, exits non-zero on failure
@@ -14,9 +14,9 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-from loop import context as reqctx
-from loop.agent import _format_memories
-from loop.storage import SqliteMemoryStore, _fts_match
+from cairn import context as reqctx
+from cairn.agent import _format_memories
+from cairn.storage import SqliteMemoryStore, _fts_match
 from strands.memory import InjectionFormatContext
 
 
@@ -33,16 +33,16 @@ def _req(channel: str, team: str = "T1", source: str = "loop") -> reqctx.Request
 
 @contextmanager
 def _scope(value: str):
-    """Temporarily set LOOP_MEMORY_SCOPE, restoring the prior value after."""
-    prev = os.environ.get("LOOP_MEMORY_SCOPE")
-    os.environ["LOOP_MEMORY_SCOPE"] = value
+    """Temporarily set CAIRN_MEMORY_SCOPE, restoring the prior value after."""
+    prev = os.environ.get("CAIRN_MEMORY_SCOPE")
+    os.environ["CAIRN_MEMORY_SCOPE"] = value
     try:
         yield
     finally:
         if prev is None:
-            os.environ.pop("LOOP_MEMORY_SCOPE", None)
+            os.environ.pop("CAIRN_MEMORY_SCOPE", None)
         else:
-            os.environ["LOOP_MEMORY_SCOPE"] = prev
+            os.environ["CAIRN_MEMORY_SCOPE"] = prev
 
 
 def _add_in(store: SqliteMemoryStore, channel: str, content: str) -> int:

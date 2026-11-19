@@ -1,12 +1,12 @@
 # Hybrid memory — libSQL / Turso (lexical + semantic, Agentic RAG)
 
-> Backend behind `LOOP_MEMORY_BACKEND=hybrid`. The default backend stays the
+> Backend behind `CAIRN_MEMORY_BACKEND=hybrid`. The default backend stays the
 > zero-dep FTS5 + provenance store; turn this on for hybrid retrieval. Verified
 > end-to-end (unit tests + a live MiniMax M3 agent turn) before merge to `main`.
 
 ## What it adds
 
-`loop/vector_store.py` (`HybridMemoryStore`) fuses **two** retrievers over one
+`cairn/vector_store.py` (`HybridMemoryStore`) fuses **two** retrievers over one
 [libSQL / Turso](https://github.com/tursodatabase) database:
 
 - **Lexical** — FTS5 `MATCH` ranked by BM25 (exact words, names, ids, numbers).
@@ -32,9 +32,9 @@ transaction), and it can later sync to Turso cloud with no code change.
 
 **No — not by default.** libSQL/Turso *stores and searches* vectors but does
 **not generate** them, so the semantic half needs an embedding model. It's
-pluggable (`loop/embeddings.py`) and defaults to a local one:
+pluggable (`cairn/embeddings.py`) and defaults to a local one:
 
-| `LOOP_EMBEDDINGS` | Key? | Notes |
+| `CAIRN_EMBEDDINGS` | Key? | Notes |
 |---|---|---|
 | `fastembed` (default) | **No** | Local ONNX, `BAAI/bge-small-en-v1.5` (384-dim). Downloads the model once (~90 MB). No rate limit. |
 | `minimax` | Key only | `embo-01`. **No Group ID needed** on `api.minimax.io` — the `ANTHROPIC_AUTH_TOKEN`/`MINIMAX_API_KEY` alone works. Shares your account's RPM with the chat model. |
@@ -51,9 +51,9 @@ key, no rate limit (recommended for the demo).
 pip install -e ".[vector]"         # libsql-experimental + fastembed
 ```
 ```dotenv
-LOOP_MEMORY_BACKEND=hybrid         # aliases: libsql / turso / vector
-LOOP_EMBEDDINGS=fastembed          # local, no API key
-LOOP_VECTOR_DB_PATH=./data/loop_vec.db
+CAIRN_MEMORY_BACKEND=hybrid         # aliases: libsql / turso / vector
+CAIRN_EMBEDDINGS=fastembed          # local, no API key
+CAIRN_VECTOR_DB_PATH=./data/cairn_vec.db
 # Optional — sync the embedded file to Turso cloud:
 # TURSO_DATABASE_URL=libsql://<db>.turso.io
 # TURSO_AUTH_TOKEN=...
@@ -70,6 +70,6 @@ python -m tests.test_vector_memory
   (`tests/test_vector_memory.py`), **and** a live MiniMax M3 agent turn that saved
   then semantically recalled with provenance citation.
 - ⚠️ The vector column dimension is fixed at create time by the embedder. Switching
-  embedding models (different dim) needs a fresh `loop_vec.db`.
+  embedding models (different dim) needs a fresh `cairn_vec.db`.
 - ⚠️ Hosted embeddings (`minimax`/`openai`) add per-op latency and share RPM; the
   local `fastembed` default avoids both.

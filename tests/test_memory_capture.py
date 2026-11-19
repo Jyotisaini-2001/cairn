@@ -13,7 +13,7 @@ import os
 
 
 def test_gate_matches_decisions_and_commitments() -> None:
-    from loop.memory_capture import looks_memorable
+    from cairn.memory_capture import looks_memorable
 
     assert looks_memorable("we decided to go with Postgres")
     assert looks_memorable("let's use Redis for the cache")
@@ -22,7 +22,7 @@ def test_gate_matches_decisions_and_commitments() -> None:
 
 
 def test_gate_rejects_chitchat() -> None:
-    from loop.memory_capture import looks_memorable
+    from cairn.memory_capture import looks_memorable
 
     assert not looks_memorable("lol nice one")
     assert not looks_memorable("what time is standup?")
@@ -30,9 +30,9 @@ def test_gate_rejects_chitchat() -> None:
 
 
 def test_capture_disabled_is_noop() -> None:
-    import loop.memory_capture as mc
+    import cairn.memory_capture as mc
 
-    os.environ["LOOP_MEMORY_CAPTURE"] = "off"
+    os.environ["CAIRN_MEMORY_CAPTURE"] = "off"
     calls: list = []
     mc._save = lambda content, metadata: calls.append((content, metadata))  # type: ignore[assignment]
     mc._extract_memory = lambda text: "should not run"  # type: ignore[assignment]
@@ -41,9 +41,9 @@ def test_capture_disabled_is_noop() -> None:
 
 
 def test_capture_saves_with_provenance() -> None:
-    import loop.memory_capture as mc
+    import cairn.memory_capture as mc
 
-    os.environ["LOOP_MEMORY_CAPTURE"] = "on"
+    os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     saved: list = []
     mc._save = lambda content, metadata: saved.append((content, metadata))  # type: ignore[assignment]
     mc._extract_memory = lambda text: "Team chose Postgres as the primary DB."  # type: ignore[assignment]
@@ -62,9 +62,9 @@ def test_capture_saves_with_provenance() -> None:
 
 
 def test_capture_skips_when_gate_fails_no_llm() -> None:
-    import loop.memory_capture as mc
+    import cairn.memory_capture as mc
 
-    os.environ["LOOP_MEMORY_CAPTURE"] = "on"
+    os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     called: list = []
     mc._extract_memory = lambda text: called.append(text) or "x"  # type: ignore[assignment]
     mc._save = lambda content, metadata: None  # type: ignore[assignment]
@@ -73,9 +73,9 @@ def test_capture_skips_when_gate_fails_no_llm() -> None:
 
 
 def test_capture_skips_when_not_memorable() -> None:
-    import loop.memory_capture as mc
+    import cairn.memory_capture as mc
 
-    os.environ["LOOP_MEMORY_CAPTURE"] = "on"
+    os.environ["CAIRN_MEMORY_CAPTURE"] = "on"
     saved: list = []
     mc._save = lambda content, metadata: saved.append(1)  # type: ignore[assignment]
     mc._extract_memory = lambda text: None  # model says not memorable
@@ -99,3 +99,43 @@ def _main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_main())
+
+
+# ------------------------------------------------- provider-agnostic extraction
+def test_extract_json_tolerates_fences_and_prose():
+    """Models wrap JSON in different ways; the parser must survive all of them."""
+    from cairn.llm import _parse_json
+
+    assert _parse_json('{"a": 1}') == {"a": 1}
+    assert _parse_json('```json\n{"a": 1}\n```') == {"a": 1}
+    assert _parse_json('Sure! Here you go: {"a": 1} — hope that helps') == {"a": 1}
+    assert _parse_json("not json at all") is None
+    assert _parse_json('[1, 2, 3]') is None          # must be an object
+
+
+def test_extraction_uses_the_provider_factory(monkeypatch):
+    """Regression: extract_json spoke Anthropic's HTTP wire format directly, so
+    every passive capture failed with a 401 the moment the project moved to
+    Gemini — while its own docstring claimed it followed the configured provider.
+    """
+    from cairn import llm
+
+    built = {}
+    monkeypatch.setattr(llm, "_json_agent", None)
+
+    class FakeAgent:
+        messages: list = []
+
+        def __init__(self, **kw):
+            built.update(kw)
+
+        def __call__(self, _prompt):
+            return '{"ok": true}'
+
+    import strands
+    monkeypatch.setattr(strands, "Agent", FakeAgent)
+    monkeypatch.setattr("cairn.agent._build_model", lambda mid=None: f"model:{mid}")
+
+    assert llm.extract_json("anything") == {"ok": True}
+    assert built["model"] == "model:None"      # came from the factory, not httpx
+    assert built["tools"] == []

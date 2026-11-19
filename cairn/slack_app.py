@@ -1,13 +1,13 @@
 """Slack Bolt app(s).
 
-Loop can run as one OR several Slack apps in a single process (see `_discover_apps`
+Cairn can run as one OR several Slack apps in a single process (see `_discover_apps`
 + `start`): each configured app gets its own Bolt App, Socket Mode connection, and
 agent persona, but they all share the same code, memory store, and telemetry. So
-`@Loop` and `@Rasputin_Loop` can coexist and even behave differently.
+`@Cairn` and a second app can coexist and even behave differently.
 
 Each app has three handlers — all route straight to that app's Strands agent:
-  - `app_mention` : user @mentions Loop in a channel → run() → reply in thread
-  - `message`     : tracks every message Loop can see (channel id/type/user in
+  - `app_mention` : user @mentions Cairn in a channel → run() → reply in thread
+  - `message`     : tracks every message Cairn can see (channel id/type/user in
                     the logs); answers it ONLY when it's a direct message (DM).
                     This is also what silences Bolt's "unhandled request" 404s
                     for `message` events.
@@ -28,21 +28,28 @@ import os
 import re
 import threading
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from loop import observability as obs
-from loop.agent import run as run_agent, remember as remember_memory
-from loop.jira_tool import (
+from cairn import context as reqctx
+from cairn import authz
+from cairn import conversation
+from cairn import decisions
+from cairn import resurface
+from cairn import observability as obs
+from cairn.agent import QuotaExhaustedError, TransientModelError
+from cairn.agent import run as run_agent, remember as remember_memory
+from cairn.jira_tool import (
     has_pending, pop_pending, _create_jira_issue_direct, _pending,
-    default_project_key, _dedup_check, resolve_project_key,
+    default_project_key, find_duplicate, resolve_project_key,
     _update_issue_direct,
 )
-from loop.action_items import looks_like_action_item, extract_action_item, save_action_item
-from loop.llm import extract_json, first_human_mention
-from loop import memory_capture
+from cairn.action_items import looks_like_action_item, extract_action_item, save_action_item
+from cairn.llm import extract_json, first_human_mention
+from cairn import memory_capture
 
 # Matches a confirmation *prefix* — the message may carry extra instructions
 # after it (e.g. "yes, assign this to ishan"). Only consulted when a staged
@@ -212,7 +219,7 @@ def _clean_bug_text(text: str) -> str:
     cleaned = _INSTRUCTION_TAIL_RE.sub("", text).strip(" ,.;:-—")
     return cleaned or text.strip()
 
-log = logging.getLogger("loop.slack")
+log = logging.getLogger("cairn.slack")
 
 _MENTION_RE = re.compile(r"<@[^>]+>")
 
@@ -225,7 +232,7 @@ def _strip_mentions(text: str) -> str:
 # go to the model natively (MiniMax M3 is multimodal); text/code/json files are
 # inlined as text; PDFs are extracted to text (pypdf) by the agent.
 _FILE_ALLOWED = ("image/", "text/", "application/json", "application/pdf")
-_FILE_MAX_BYTES = int(os.environ.get("LOOP_MAX_FILE_BYTES", str(8 * 1024 * 1024)) or 0)
+_FILE_MAX_BYTES = int(os.environ.get("CAIRN_MAX_FILE_BYTES", str(8 * 1024 * 1024)) or 0)
 
 
 def _download(url: str, token: str) -> bytes:
@@ -269,7 +276,7 @@ def _detect_action_item(
     client=None,
 ) -> None:
     """Detect and save action items. Adds a 📋 reaction when one is found so users know it was captured."""
-    if os.environ.get("LOOP_ACTION_ITEMS", "").lower() not in {"on", "true", "1"}:
+    if os.environ.get("CAIRN_ACTION_ITEMS", "").lower() not in {"on", "true", "1"}:
         return
     if not text or not looks_like_action_item(text):
         return
@@ -288,10 +295,170 @@ def _detect_action_item(
         log.exception("action item detection failed silently")
 
 
-def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachments=None, app_name=None) -> None:
+# ── Off-thread dispatch ──────────────────────────────────────────────────────
+# Socket Mode wants the event acknowledged within ~3s, but an agent turn takes
+# seconds (and can retry a rate-limited provider on top). Running it inline held
+# the socket open past the deadline, so Slack re-delivered the event and the user
+# got the same answer twice. We hand the work to a small pool and return
+# immediately; the reply still lands in-thread when it is ready.
+#
+#   CAIRN_ASYNC=off        run inline again (useful when debugging)
+#   CAIRN_ASYNC_WORKERS=4  concurrent turns
+_executor: ThreadPoolExecutor | None = None
+_executor_lock = threading.Lock()
+
+
+def _async_enabled() -> bool:
+    return os.environ.get("CAIRN_ASYNC", "on").strip().lower() not in {
+        "off", "0", "false", "no"}
+
+
+def _pool() -> ThreadPoolExecutor:
+    global _executor
+    with _executor_lock:
+        if _executor is None:
+            try:
+                workers = max(1, int(os.environ.get("CAIRN_ASYNC_WORKERS", "4")))
+            except ValueError:
+                workers = 4
+            _executor = ThreadPoolExecutor(max_workers=workers,
+                                           thread_name_prefix="cairn-turn")
+            log.info("async dispatch on (%d workers)", workers)
+        return _executor
+
+
+def _dispatch(fn, *args, **kwargs) -> None:
+    """Run `fn` off the socket thread so Slack gets its ack immediately.
+
+    Exceptions inside the worker are logged rather than lost — a future nobody
+    inspects swallows them silently otherwise. `fn` (`_answer`) already reports
+    failures to the user itself.
+    """
+    if not _async_enabled():
+        fn(*args, **kwargs)
+        return
+
+    def _run() -> None:
+        try:
+            fn(*args, **kwargs)
+        except Exception:  # noqa: BLE001
+            log.exception("background turn failed")
+
+    _pool().submit(_run)
+
+
+# ── Conversation context ─────────────────────────────────────────────────────
+# The fetch/normalise logic lives in `cairn.conversation` so that context,
+# capture and backfill all read a conversation the same way. These stay as thin
+# wrappers because the flags are read per-request (tests flip them at runtime).
+def _thread_context_enabled() -> bool:
+    return conversation._flag("CAIRN_THREAD_CONTEXT")
+
+
+def _thread_limit() -> int:
+    return conversation._int_env("CAIRN_THREAD_CONTEXT_LIMIT", 10)
+
+
+def _thread_history(client, channel: str, thread_ts: str, current_ts: str,
+                    bot_user_id: str) -> list[dict]:
+    """Recent turns of this thread, oldest first, excluding the current message."""
+    if not _thread_context_enabled():
+        return []
+    turns = conversation.read_thread(
+        client, channel, thread_ts, exclude_ts=current_ts,
+        bot_user_id=bot_user_id, limit=_thread_limit())
+    log.info("thread context: %d turn(s) (thread_ts=%s current_ts=%s)",
+             len(turns), thread_ts, current_ts)
+    return turns
+
+
+def _maybe_resurface(event: dict, say, cfg: "AppConfig") -> None:
+    """Post a past decision when a settled question is re-opened.
+
+    In-thread, so it sits beside the question rather than interrupting the
+    channel. Silent when the record has nothing that answers it, which is most
+    of the time — that is the point.
+    """
+    note = resurface.check(
+        _strip_mentions(event.get("text", "") or ""),
+        channel=event.get("channel"), team=event.get("team"), source=cfg.name)
+    if not note:
+        return
+    try:
+        say(text=note, thread_ts=event.get("thread_ts") or event.get("ts"))
+    except Exception:  # noqa: BLE001
+        log.exception("[%s] could not post resurfaced decision", cfg.name)
+
+
+def _capture_conversation(client, event: dict, cfg: "AppConfig") -> None:
+    """Distil the conversation around an observed decision into one memory.
+
+    Reads the thread when the message is in one, else recent channel messages —
+    the same reader the agent uses for context, so a captured memory always
+    corresponds to a conversation Cairn could also have read.
+    """
+    channel = event.get("channel")
+    thread_ts = event.get("thread_ts")
+    if thread_ts:
+        turns = conversation.read_thread(
+            client, channel, thread_ts, bot_user_id=cfg.bot_user_id,
+            limit=conversation._int_env("CAIRN_CAPTURE_LIMIT", 20))
+    else:
+        turns = conversation.read_channel(
+            client, channel, bot_user_id=cfg.bot_user_id,
+            limit=conversation._int_env("CAIRN_CAPTURE_LIMIT", 20))
+    if not turns:
+        return
+    # The triggering message's author is the right attribution here: this runs
+    # on the message that tripped the gate, and bot messages never reach it.
+    memory_capture.capture_conversation(
+        turns, author=event.get("user"), channel=channel,
+        team=event.get("team"), source=cfg.name, thread_ts=thread_ts)
+
+
+def _authorised(ix: obs.Interaction, respond, logger) -> bool:
+    """Gate one invocation. Returns False (and tells the user) when refused.
+
+    Applied at `_answer` — the shared path for mentions and DMs — and separately
+    in the slash handler, which answers from the decision log before reaching it.
+    Refusals are recorded as interactions with outcome="denied", so an audit
+    shows what was attempted, not just what succeeded.
+    """
+    ok, reason = authz.check(ix.user, ix.channel)
+    if ok:
+        return True
+    logger.warning("[authz] denied %s: %s", ix.request_id, reason)
+    ix.outcome, ix.error = "denied", reason
+    try:
+        obs._persist(ix)
+    except Exception:  # noqa: BLE001
+        pass
+    respond(authz.DENIAL_MESSAGE)
+    return False
+
+
+def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachments=None,
+            app_name=None, bot_user_id: str = "") -> None:
     """Shared path for mention + DM: react, run the agent under telemetry, reply."""
     channel, thread_ts = ix.channel, ix.thread_ts
+    if not _authorised(ix, lambda text: say(text=text, thread_ts=thread_ts), logger):
+        return
     _react(client, channel, thread_ts, "eyes")
+    # Recent turns of this thread, so follow-ups ("what about the second one?")
+    # resolve. Empty for a fresh top-level mention; never fatal.
+    #
+    # NB: fetch from the thread's PARENT (`event.thread_ts`, carried on the
+    # context envelope), not `ix.thread_ts`. The latter is the message's own ts
+    # — deliberately so, since replying with it roots Cairn's answer under the
+    # mention — but asking conversations_replies for a *reply's* ts returns only
+    # that one message, which is how this silently fetched nothing.
+    parent_ts = event_ctx.get("thread_ts") or thread_ts
+    event_ctx = {**event_ctx, "thread": conversation.read_context(
+        client, channel,
+        thread_ts=parent_ts,
+        in_thread=bool(event_ctx.get("in_thread")),
+        current_ts=event_ctx.get("ts") or "",
+        bot_user_id=bot_user_id)}
     try:
         with obs.record(ix):
             run = run_agent(
@@ -301,6 +468,20 @@ def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachmen
             ix.from_run(run)
             say(text=run.text or "_(no response)_", thread_ts=thread_ts)
         _swap(client, channel, thread_ts, "white_check_mark")
+    except QuotaExhaustedError as err:
+        # Distinct from "busy": this one resets on a clock, so "try again in a
+        # moment" would be a lie.
+        logger.warning("quota exhausted rid=%s: %s", ix.request_id, str(err)[:200])
+        _swap(client, channel, thread_ts, "warning")
+        say(text=":warning: I've used up today's model quota — it resets on the "
+                 "provider's daily clock.", thread_ts=thread_ts)
+    except TransientModelError as err:
+        # Provider was rate-limited / overloaded and retries ran out. Say so in
+        # words — silence (or a stack trace) is what this used to look like.
+        logger.warning("model unavailable rid=%s: %s", ix.request_id, err)
+        _swap(client, channel, thread_ts, "warning")
+        say(text=":warning: The model is busy or rate-limited right now — "
+                 "try me again in a moment.", thread_ts=thread_ts)
     except Exception as err:  # noqa: BLE001
         logger.exception("agent invocation failed rid=%s", ix.request_id)
         _swap(client, channel, thread_ts, "warning")
@@ -309,7 +490,7 @@ def _answer(ix: obs.Interaction, event_ctx: dict, say, client, logger, attachmen
 
 @dataclass
 class AppConfig:
-    """One Slack app Loop runs as: a short name + its bot/app token pair."""
+    """One Slack app Cairn runs as: a short name + its bot/app token pair."""
 
     name: str
     bot_token: str
@@ -325,9 +506,9 @@ def _discover_apps() -> list[AppConfig]:
           e.g. SLACK_BOT_TOKEN_LOOP/SLACK_APP_TOKEN_LOOP and
                SLACK_BOT_TOKEN_RASPUTIN/SLACK_APP_TOKEN_RASPUTIN  → two apps.
       • Bare pair (back-compat):  SLACK_BOT_TOKEN + SLACK_APP_TOKEN  → one app,
-          named by SLACK_APP_NAME (default "loop").
+          named by SLACK_APP_NAME (default "cairn").
     Each app gets its own Bolt App + Socket Mode connection in `start()`, and its
-    own agent persona (LOOP_PERSONA_<NAME>).
+    own agent persona (CAIRN_PERSONA_<NAME>).
     """
     pairs: dict[str, dict[str, str]] = {}
     for key, val in os.environ.items():
@@ -338,7 +519,7 @@ def _discover_apps() -> list[AppConfig]:
         elif key.startswith("SLACK_APP_TOKEN_"):
             pairs.setdefault(key[len("SLACK_APP_TOKEN_"):].lower(), {})["app"] = val
     if os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_APP_TOKEN"):
-        name = (os.environ.get("SLACK_APP_NAME") or "loop").lower()
+        name = (os.environ.get("SLACK_APP_NAME") or "cairn").lower()
         slot = pairs.setdefault(name, {})
         slot.setdefault("bot", os.environ["SLACK_BOT_TOKEN"])
         slot.setdefault("app", os.environ["SLACK_APP_TOKEN"])
@@ -405,8 +586,9 @@ def _build_app(cfg: AppConfig) -> App:
             _react(client, ix.channel, ix.thread_ts, "eyes")
             try:
                 ticket = _extract_bug_details(text, raw_text)
-                # Dedup: if a similar open ticket already exists, skip staging
-                existing = _dedup_check(ticket["summary"])
+                # Dedup via the shared entry point — this path bypasses the
+                # agent, so it must not carry its own (weaker) copy of the check.
+                existing = find_duplicate(ticket["summary"])
                 if existing:
                     say(
                         text=f":mag: Looks like this may already be tracked: *{existing}* — check Jira before filing a new one.",
@@ -498,14 +680,16 @@ def _build_app(cfg: AppConfig) -> App:
         # Action-item detection: runs after Jira checks, before the agent.
         _detect_action_item(text, raw_text, ix.channel, event.get("ts"), event.get("team"), cfg.name, client=client)
 
-        _answer(ix, _ctx(event), say, client, logger, attachments=attachments, app_name=cfg.name)
+        _dispatch(_answer, ix, _ctx(event), say, client, logger,
+                  attachments=attachments, app_name=cfg.name,
+                  bot_user_id=cfg.bot_user_id)
 
     @app.event("message")
     def on_message(event, say, client, logger):
-        # Tracking + DM support. We log EVERY message Loop receives so each
+        # Tracking + DM support. We log EVERY message Cairn receives so each
         # channel it can see is visible in the logs, but we only *answer* DMs.
         # Channel messages stay observe-only — @mention / /loop are how you
-        # invoke Loop in a channel. (Registering this handler is also what stops
+        # invoke Cairn in a channel. (Registering this handler is also what stops
         # Bolt's 404 "unhandled request" warnings for `message` events.)
         if event.get("bot_id"):
             return  # ignore our own messages (avoids loops)
@@ -523,10 +707,31 @@ def _build_app(cfg: AppConfig) -> App:
         )
         if channel_type != "im":
             _detect_action_item(text, raw, channel, event.get("ts"), event.get("team"), cfg.name, client=client)
-            # Passively capture decisions/commitments Loop only observes (off unless
-            # LOOP_MEMORY_CAPTURE=on) so recall works without an explicit @Loop turn.
-            memory_capture.capture(text, author=user, channel=channel, team=event.get("team"), source=cfg.name)
-            return  # observe-only (channel chatter) — not a DM to Loop
+            # Passively capture decisions Cairn only observes (off unless
+            # CAIRN_MEMORY_CAPTURE=on), so recall works without an @Cairn turn.
+            #
+            # The gate runs on the triggering message (cheap, no model call), but
+            # what gets distilled is the surrounding CONVERSATION — the decision
+            # is the last line of a discussion, and the reasoning that produced it
+            # is in the lines before. Off the socket thread: this makes a model
+            # call and one or two Slack reads.
+            # `event.get("bot_id")` guards the feedback loop: Cairn's own replies
+            # are full of decision language ("We decided to use Postgres
+            # because…") since it reports decisions back, and capturing those
+            # would feed its output into its own memory, to be cited later as
+            # evidence. Bolt delivers bot messages here too, so this matters.
+            if (not event.get("bot_id")
+                    and authz.may_listen(channel)
+                    and memory_capture.enabled()
+                    and memory_capture.looks_memorable(text)):
+                _dispatch(_capture_conversation, client, event, cfg)
+            # Proactivity, earned (CAIRN_RESURFACE=off by default): if someone
+            # re-opens a question the record already answers, offer the decision
+            # and its source. Same engine as recall, pushed instead of pulled.
+            elif (not event.get("bot_id") and authz.may_listen(channel)
+                  and resurface.enabled()):
+                _dispatch(_maybe_resurface, event, say, cfg)
+            return  # observe-only (channel chatter) — not a DM to Cairn
         if "<@" in raw:
             return  # a mention inside a DM: let the app_mention handler take it
         attachments = _collect_files(event, client)
@@ -542,12 +747,18 @@ def _build_app(cfg: AppConfig) -> App:
             prompt=text or "(see attached file)",
         )
         log.info("[%s] dm rid=%s channel=%s user=%s files=%d", cfg.name, ix.request_id, channel, user, len(attachments))
-        _answer(ix, _ctx(event), say, client, logger, attachments=attachments, app_name=cfg.name)
+        _dispatch(_answer, ix, _ctx(event), say, client, logger,
+                  attachments=attachments, app_name=cfg.name,
+                  bot_user_id=cfg.bot_user_id)
 
-    @app.command("/loop")
-    def on_loop(ack, respond, command):
+    def _slash(ack, respond, command):
+        # The slash command answers straight from the decision log when the ask
+        # is about the record ("decisions", "what did we decide last week"). That
+        # path is deterministic — a listing read from the store, with sources —
+        # which costs nothing, cannot hallucinate, and works when the model
+        # quota is spent. Anything else goes to the agent.
         ack()
-        text = (command.get("text") or "").strip() or "Give me a digest of recent memory."
+        text = (command.get("text") or "").strip()
         ix = obs.Interaction(
             entrypoint=f"{cfg.name}:slash",
             team=command.get("team_id"),
@@ -557,6 +768,26 @@ def _build_app(cfg: AppConfig) -> App:
             prompt=text,
         )
         log.info("[%s] slash rid=%s channel=%s user=%s", cfg.name, ix.request_id, ix.channel, ix.user)
+
+        # Permission management runs BEFORE the permission check. An admin who
+        # accidentally locks themselves out has to be able to type `/cairn allow
+        # @me` and recover; a gate in front of that would make the mistake
+        # permanent from inside Slack. `handle_admin_command` does its own admin
+        # check, so this is not a hole.
+        admin_reply = authz.handle_admin_command(text, actor=ix.user)
+        if admin_reply is not None:
+            respond(admin_reply)
+            return
+
+        # Gate BEFORE the decision-log branch, not after: the log answers from
+        # the store without touching the agent, so a check placed later would
+        # leave the whole record readable by anyone with the slash command.
+        if not _authorised(ix, respond, log):
+            return
+        if not text or _LOG_REQUEST_RE.search(text):
+            scope = reqctx.scope_for(ix.channel, ix.team) if ix.channel else None
+            respond(decisions.log_decisions(text, scope=scope))
+            return
         try:
             with obs.record(ix):
                 run = run_agent(text, context=_ctx_cmd(command), request_id=ix.request_id, app_name=cfg.name)
@@ -566,9 +797,21 @@ def _build_app(cfg: AppConfig) -> App:
             log.exception("[%s] slash command failed rid=%s", cfg.name, ix.request_id)
             respond(f":warning: Something went wrong: {err}")
 
+    # `/cairn` is the name; `/loop` stays registered so an app installed with the
+    # old slash command keeps working.
+    app.command("/cairn")(_slash)
+    app.command("/loop")(_slash)
+
     if _assistant_enabled():
         _attach_assistant(app, cfg)
     return app
+
+
+# Asking *about the record* rather than *from* it — these go to the decision log,
+# not the agent.
+_LOG_REQUEST_RE = re.compile(
+    r"\b(decisions?|decision log|what did we (decide|agree)|what have we "
+    r"(decided|agreed)|recap|digest|log)\b", re.IGNORECASE)
 
 
 def _ctx(event: dict) -> dict:
@@ -578,6 +821,9 @@ def _ctx(event: dict) -> dict:
         "channel_type": event.get("channel_type"),
         "team": event.get("team"),
         "thread_ts": event.get("thread_ts") or event.get("ts"),
+        "ts": event.get("ts"),
+        # threaded reply? (Slack only sends thread_ts when the message is one)
+        "in_thread": bool(event.get("thread_ts")),
     }
 
 
@@ -591,7 +837,7 @@ def _ctx_cmd(command: dict) -> dict:
 
 
 # ── Native Slack AI "Assistant" surface (Slack AI capabilities) ───────────────
-# Opt-in via LOOP_SLACK_ASSISTANT=on. Requires, on the Slack app: the "Agents & AI
+# Opt-in via CAIRN_SLACK_ASSISTANT=on. Requires, on the Slack app: the "Agents & AI
 # Apps" feature enabled, the `assistant:write` scope, and the `assistant_thread_*`
 # events subscribed. Routes the same single Strands agent into the assistant pane
 # (side panel / app DM) with suggested prompts + a live "is thinking…" status.
@@ -603,7 +849,7 @@ _SUGGESTED_PROMPTS = [
 
 
 def _assistant_enabled() -> bool:
-    return os.environ.get("LOOP_SLACK_ASSISTANT", "off").strip().lower() in {"on", "1", "true", "yes"}
+    return os.environ.get("CAIRN_SLACK_ASSISTANT", "off").strip().lower() in {"on", "1", "true", "yes"}
 
 
 def _attach_assistant(app: "App", cfg: "AppConfig") -> None:
@@ -619,7 +865,7 @@ def _attach_assistant(app: "App", cfg: "AppConfig") -> None:
 
     @assistant.thread_started
     def _started(say, set_suggested_prompts, logger):
-        say(":wave: Hi! I'm *Loop*. Ask me to recall a decision, summarize a channel, or remember something.")
+        say(":wave: Hi! I'm *Cairn*. Ask me to recall a decision, summarize a channel, or remember something.")
         try:
             set_suggested_prompts(prompts=_SUGGESTED_PROMPTS, title="Try one of these:")
         except Exception:  # noqa: BLE001
@@ -646,6 +892,8 @@ def _attach_assistant(app: "App", cfg: "AppConfig") -> None:
         )
         log.info("[%s] assistant rid=%s channel=%s user=%s files=%d",
                  cfg.name, ix.request_id, ix.channel, ix.user, len(attachments))
+        if not _authorised(ix, lambda t: say(text=t), log):
+            return
         try:
             with obs.record(ix):
                 run = run_agent(
@@ -688,7 +936,7 @@ def start() -> None:  # pragma: no cover
             "No Slack apps configured. Set SLACK_BOT_TOKEN + SLACK_APP_TOKEN, and/or "
             "SLACK_BOT_TOKEN_<NAME> + SLACK_APP_TOKEN_<NAME> pairs."
         )
-    from loop.llm import register_bot_id
+    from cairn.llm import register_bot_id
 
     for cfg in configs:
         app = _build_app(cfg)
@@ -696,15 +944,24 @@ def start() -> None:  # pragma: no cover
             auth = app.client.auth_test()
             cfg.bot_user_id = auth.get("user_id") or ""
             register_bot_id(auth.get("user_id"))
-            log.info("loop: app %r is bot user %s (%s)", cfg.name, auth.get("user_id"), auth.get("user"))
+            log.info("cairn: app %r is bot user %s (%s)", cfg.name, auth.get("user_id"), auth.get("user"))
         except Exception:  # noqa: BLE001 — identity lookup is best-effort
-            log.warning("loop: auth.test failed for app %r; bot-mention filtering may miss it", cfg.name)
+            log.warning("cairn: auth.test failed for app %r; bot-mention filtering may miss it", cfg.name)
         handler = SocketModeHandler(app, cfg.app_token)
         handler.connect()  # non-blocking: opens this app's socket on a background thread
-        log.info("loop: Slack app %r connected (socket mode)", cfg.name)
-    log.info("loop: %d app(s) running: %s", len(configs), ", ".join(c.name for c in configs))
-    # Ambient (proactive PM) mode — off unless LOOP_AMBIENT=on; one daemon per app.
-    from loop import ambient  # noqa: PLC0415 (optional path; keeps import cost off the default)
+        log.info("cairn: Slack app %r connected (socket mode)", cfg.name)
+    log.info("cairn: %d app(s) running: %s", len(configs), ", ".join(c.name for c in configs))
+
+    # Say at startup whether Jira actually works. It fails quietly otherwise: a
+    # dead token still gets 200s (with empty results) from Jira's search
+    # endpoints, so ticket dedup silently finds nothing and filing 400s later.
+    if os.environ.get("JIRA_API_TOKEN"):
+        from cairn.jira_tool import check_auth  # noqa: PLC0415
+
+        ok, message = check_auth()
+        (log.info if ok else log.warning)("cairn: %s", message)
+    # Ambient (proactive PM) mode — off unless CAIRN_AMBIENT=on; one daemon per app.
+    from cairn import ambient  # noqa: PLC0415 (optional path; keeps import cost off the default)
 
     ambient.maybe_start(configs)
     threading.Event().wait()  # block forever; each app runs in its own background thread

@@ -1,4 +1,4 @@
-"""Pluggable text embeddings for Loop's optional vector memory.
+"""Pluggable text embeddings for Cairn's optional vector memory.
 
 EXPERIMENTAL — lives on the `feat/vector-memory-turso` branch, not on `main`.
 
@@ -6,7 +6,7 @@ Answer to "do I need an embedding-model API key?": **no, not necessarily.**
 
   • ``fastembed`` (default) — runs locally in-process via ONNX Runtime. No API
     key, no GPU, no server. Default model ``BAAI/bge-small-en-v1.5`` (384-dim).
-    `pip install "loop[vector]"` pulls it in (downloads the model once, ~90 MB).
+    `pip install "cairn[vector]"` pulls it in (downloads the model once, ~90 MB).
   • ``minimax`` — reuses your MiniMax account but a DIFFERENT endpoint
     (``/v1/embeddings``, model ``embo-01``); needs ``MINIMAX_API_KEY`` +
     ``MINIMAX_GROUP_ID``. (The chat model uses the Anthropic-compatible endpoint;
@@ -15,7 +15,7 @@ Answer to "do I need an embedding-model API key?": **no, not necessarily.**
   • ``hashing`` — deterministic, dependency-free bag-of-words hashing. NOT
     semantic; for tests and as a last-resort fallback so nothing crashes.
 
-Select with ``LOOP_EMBEDDINGS=fastembed|minimax|openai|hashing`` (default
+Select with ``CAIRN_EMBEDDINGS=fastembed|minimax|openai|hashing`` (default
 ``fastembed``). If the chosen provider's dep/key is missing we log and fall back
 to ``hashing`` rather than failing the agent.
 """
@@ -30,7 +30,7 @@ import re
 import urllib.request
 from typing import Protocol
 
-log = logging.getLogger("loop.embeddings")
+log = logging.getLogger("cairn.embeddings")
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -80,7 +80,7 @@ class FastEmbedEmbedder:
     def __init__(self, model: str | None = None) -> None:
         from fastembed import TextEmbedding  # noqa: PLC0415 (optional dep)
 
-        self.model_name = model or os.environ.get("LOOP_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+        self.model_name = model or os.environ.get("CAIRN_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
         self._model = TextEmbedding(model_name=self.model_name)
         # Derive dimension from a probe (fastembed yields numpy arrays).
         self.dim = len(self.embed_one("dimension probe"))
@@ -115,8 +115,8 @@ class OpenAIEmbedder(_HttpEmbedder):
     def __init__(self) -> None:
         self.key = os.environ.get("OPENAI_API_KEY")
         if not self.key:
-            raise RuntimeError("OPENAI_API_KEY required for LOOP_EMBEDDINGS=openai")
-        self.model = os.environ.get("LOOP_EMBED_MODEL", "text-embedding-3-small")
+            raise RuntimeError("OPENAI_API_KEY required for CAIRN_EMBEDDINGS=openai")
+        self.model = os.environ.get("CAIRN_EMBED_MODEL", "text-embedding-3-small")
         self.base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
         self.dim = self.embed_one("dimension probe").__len__()
 
@@ -138,8 +138,8 @@ class MiniMaxEmbedder(_HttpEmbedder):
         self.key = os.environ.get("MINIMAX_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
         self.group = os.environ.get("MINIMAX_GROUP_ID")
         if not self.key or not self.group:
-            raise RuntimeError("MINIMAX_API_KEY + MINIMAX_GROUP_ID required for LOOP_EMBEDDINGS=minimax")
-        self.model = os.environ.get("LOOP_EMBED_MODEL", "embo-01")
+            raise RuntimeError("MINIMAX_API_KEY + MINIMAX_GROUP_ID required for CAIRN_EMBEDDINGS=minimax")
+        self.model = os.environ.get("CAIRN_EMBED_MODEL", "embo-01")
         self.base = os.environ.get("MINIMAX_API_HOST", "https://api.minimax.io").rstrip("/")
         self.dim = self.embed_one("dimension probe").__len__()
 
@@ -162,7 +162,7 @@ _PROVIDERS = {
 
 def get_embedder() -> Embedder:
     """Build the configured embedder, falling back to hashing on any failure."""
-    choice = os.environ.get("LOOP_EMBEDDINGS", "fastembed").strip().lower()
+    choice = os.environ.get("CAIRN_EMBEDDINGS", "fastembed").strip().lower()
     factory = _PROVIDERS.get(choice, FastEmbedEmbedder)
     try:
         emb = factory()

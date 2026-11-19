@@ -1,10 +1,41 @@
-# <img width="25" height="25" alt="loop" src="https://github.com/user-attachments/assets/20c20ad6-7a80-49eb-aa2e-5a0cf3cc1ac4" /> Loop
+# <img width="25" height="25" alt="Cairn" src="https://github.com/user-attachments/assets/20c20ad6-7a80-49eb-aa2e-5a0cf3cc1ac4" /> Cairn
 
-A Slack-native AI agent built on [Strands Agents](https://strandsagents.com/), running on **MiniMax M3** (via its Anthropic-compatible endpoint).
+**Your team's decisions, answerable — with a source.**
 
-When you `@mention` the bot (or invoke `/loop`), a single Strands agent thinks, optionally uses a tool, and replies in the thread. It remembers things in long-term memory, reads files you attach, and can run as **several distinct Slack apps at once** from one process.
+Teams make decisions in Slack and then lose them. Six months later nobody can
+find why you chose Postgres over Mongo, so the debate runs again. Slack search
+cannot help, because decisions do not look like decisions — they look like
+*"yeah ok let's do that"*, buried in message 47 of a thread about something else.
 
-There is **one brain** — the agent. No intent parser, no command router, no extraction pipeline.
+Cairn is named after the stacks of stones hikers leave on a trail so the next
+person finds the path. It reads channel conversations **without being
+mentioned**, recognises when a decision has been made, and distils the whole
+discussion — the choice, the reasoning, and the option that was rejected — into
+a memory stamped with its author, channel and date.
+
+```
+you:   @Cairn why did we pick Postgres?
+
+Cairn: Postgres for billing, because Mongo's transactions were flaky; the team
+       accepted a migration cost to get correctness.
+       — @rahul in #eng on 12 March 2026
+```
+
+**The citation is the product.** An AI answer without a source is a rumour. In
+Cairn provenance is stamped by the storage layer from the request context — the
+model never touches it, so it structurally cannot fabricate a source.
+
+**It also knows when to forget.** When a decision replaces an earlier one, the
+old version is retired rather than served alongside it. A stale answer wearing a
+citation is worse than no answer at all.
+
+Built on [Strands Agents](https://strandsagents.com/), and **provider-agnostic**:
+Anthropic, Google Gemini, OpenAI, Bedrock, Ollama or a LiteLLM gateway, chosen by
+one environment variable. There is **one brain** — the agent. No intent parser,
+no command router, no extraction pipeline.
+
+See [`DIRECTION.md`](DIRECTION.md) for what the project is for and why, and
+[`architecture.md`](architecture.md) for how it is wired.
 
 ---
 
@@ -13,16 +44,19 @@ There is **one brain** — the agent. No intent parser, no command router, no ex
 | Capability | What it means |
 |---|---|
 | 🤖 **Strands agent** | One agent loop decides what to do; replies in Slack `mrkdwn`. |
-| 🧠 **Episodic memory** | Crucial facts/decisions/episodes persisted in SQLite, each **stamped with who/where/when**; auto-injected (with provenance) before each reply. The agent is the filter — it saves signal, skips chit-chat, and de-dupes. |
-| 🔎 **Hybrid RAG recall** | Optional libSQL/**Turso** backend fusing **FTS5 (lexical) + semantic vectors** via Reciprocal Rank Fusion. Local embeddings (`fastembed`) — **no API key**. `LOOP_MEMORY_BACKEND=hybrid`. |
-| ✨ **Slack AI Assistant** | Native Slack AI app pane — suggested prompts + live "is thinking…" status, routed to the same agent. `LOOP_SLACK_ASSISTANT=on`. |
-| 👥 **Multi-app support** | Run **Loop _and_ Rasputin_Loop** (and more) in one process — each its own bot, its own agent, its own persona. |
+| 🧠 **Decision memory** | Decisions captured **from conversations Cairn is never mentioned in**, distilled with their *reasoning*, and stamped with who/where/when. |
+| 🔎 **Hybrid RAG recall** | Optional libSQL/**Turso** backend fusing **FTS5 (lexical) + semantic vectors** via Reciprocal Rank Fusion. Local embeddings (`fastembed`) — **no API key**. `CAIRN_MEMORY_BACKEND=hybrid`. |
+| ✨ **Slack AI Assistant** | Native Slack AI app pane — suggested prompts + live "is thinking…" status, routed to the same agent. `CAIRN_SLACK_ASSISTANT=on`. |
+| 👥 **Multi-app support** | Run several Slack apps in one process — each its own bot, agent and persona. |
 | 📎 **File & image reading** | Images go to the model natively (M3 is multimodal); text/code/JSON inlined; PDFs extracted (`pypdf`). |
 | 🎫 **Jira auto-triage** | Detects bug reports in Slack → extracts title/priority/assignee → confirms with user → creates Jira ticket. Smart assignee routing: `<@mention>` → Slack email → Jira account ID, fully automatic. |
-| 🛠️ **Tools** | `slack`, `slack_send_message`, `calculator`, `think`, `jira_stage_ticket`, `jira_create_issue`, `jira_search_issues`, plus runtime **MCP** tools. |
+| 📜 **Decision log** | `/cairn what did we decide last week` — a sourced listing read straight from the store. No model call, so it cannot invent an entry. |
+| ♻️ **Supersession** | A decision that replaces an older one retires it, following chains (24h → 4h → 8h leaves one live answer). |
+| 📍 **Resurfacing** | Re-open a settled question and Cairn offers the decision and its source, in-thread. Off by default. |
+| 🛠️ **Tools** | Env-switchable groups (`CAIRN_TOOLS`): slack, jira, calculator, decisions, think — plus runtime **MCP** tools. |
 | 🔭 **Observability** | Per-interaction telemetry + per-step traces, persisted to SQLite. |
 | 🛡️ **Guardrails** | Tool-call caps, repeat limits, token budget, and a risky-Slack-method blocklist. |
-| ✅ **Evaluation** | `loop-eval` runs a golden set through the real agent and gates on regressions. |
+| ✅ **Evaluation** | `cairn-eval` runs a golden set through the real agent and gates on regressions. |
 
 See [`architecture.md`](architecture.md) for how it's wired and [`progress.md`](progress.md) for the roadmap (mapped to the 5 Pillars of Production AI).
 
@@ -61,8 +95,8 @@ flowchart LR
         MM["MiniMax M3 · Claude · GPT<br/>Bedrock · Ollama · Gemini"]
     end
     subgraph Store["local storage"]
-        DB[("loop.db<br/>telemetry + memory + evals")]
-        VDB[("loop_vec.db<br/>vectors + FTS, RRF-fused")]
+        DB[("cairn.db<br/>telemetry + memory + evals")]
+        VDB[("cairn_vec.db<br/>vectors + FTS, RRF-fused")]
     end
     M & DM & SL & AP --> H
     H --> BG --> AG
@@ -77,7 +111,7 @@ flowchart LR
 
 ## Data model (ER)
 
-`loop.db` (SQLite — telemetry, evals, action items, and the default memory backend):
+`cairn.db` (SQLite — telemetry, evals, action items, and the default memory backend):
 
 ```mermaid
 erDiagram
@@ -148,7 +182,7 @@ erDiagram
         text author "provenance: who said it"
         text channel "provenance: where"
         text team
-        text source "which Loop app"
+        text source "which Cairn app"
         text thread_ts
         int created_at
     }
@@ -157,25 +191,25 @@ erDiagram
     }
 ```
 
-`loop_vec.db` (libSQL — the hybrid backend, `LOOP_MEMORY_BACKEND=hybrid`): the same
+`cairn_vec.db` (libSQL — the hybrid backend, `CAIRN_MEMORY_BACKEND=hybrid`): the same
 `memory_entries` shape **plus** an `embedding F32_BLOB(384)` column with a native
 vector index, and its own FTS5 mirror; lexical + semantic results are fused via
 Reciprocal Rank Fusion at query time.
 
 ---
 
-## Multi-app support (Loop + Rasputin_Loop)
+## Multi-app support (Cairn + Rasputin_Loop)
 
-Loop can run **one or many** Slack apps in a single process. Each configured app gets its own Bolt App, its own Socket Mode connection (own thread), and its own agent — but they share code, memory, and telemetry.
+Cairn can run **one or many** Slack apps in a single process. Each configured app gets its own Bolt App, its own Socket Mode connection (own thread), and its own agent — but they share code, memory, and telemetry.
 
 - **One app (back-compat):** set the bare `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (label it with `SLACK_APP_NAME`, default `loop`).
 - **Many apps:** add a `SLACK_BOT_TOKEN_<NAME>` + `SLACK_APP_TOKEN_<NAME>` pair per app.
 
-Give each app a different job with **`LOOP_PERSONA_<NAME>`**, which is appended to that app's system prompt:
+Give each app a different job with **`CAIRN_PERSONA_<NAME>`**, which is appended to that app's system prompt:
 
 ```bash
-LOOP_PERSONA_LOOP=You are the team's general assistant.
-LOOP_PERSONA_RASPUTIN=You are the on-call incident assistant; be terse and precise.
+CAIRN_PERSONA_LOOP=You are the team's general assistant.
+CAIRN_PERSONA_RASPUTIN=You are the on-call incident assistant; be terse and precise.
 ```
 
 Telemetry tags every interaction `"<app>:<entrypoint>"` (e.g. `rasputin:app_mention`) so the apps stay distinguishable.
@@ -191,7 +225,7 @@ Telemetry tags every interaction `"<app>:<entrypoint>"` (e.g. `rasputin:app_ment
 | `search_memory` / `add_memory` | Strands `MemoryManager` | Long-term memory recall (auto-injected) and writes. |
 | `calculator` | `strands_tools.calculator` | Math. |
 | `think` | `strands_tools.think` | Structured reasoning for hard problems. |
-| *(MCP tools)* | `LOOP_MCP_SERVERS` | Any stdio MCP server's tools, loaded at runtime. |
+| *(MCP tools)* | `CAIRN_MCP_SERVERS` | Any stdio MCP server's tools, loaded at runtime. |
 
 **Required Slack bot scopes:** `app_mentions:read`, `chat:write`, `commands`, `reactions:write`, `files:read`, `channels:history`, `groups:history`, `im:history`, `users:read`, `users:read.email` (assignee-by-name → email resolution). For the native **AI Assistant** pane add `assistant:write` + enable the "Agents & AI Apps" feature (see [`docs/slack-assistant.md`](docs/slack-assistant.md)); for ambient full-channel discovery without an allow-list add `channels:read`.
 
@@ -243,7 +277,7 @@ ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic
 ANTHROPIC_MODEL=MiniMax-M3
 
 # ── Storage ──
-DATABASE_PATH=./data/loop.db
+DATABASE_PATH=./data/cairn.db
 ```
 
 See [`.env.example`](.env.example) for every knob (personas, guardrails, observability, file-size cap, MCP).
@@ -266,27 +300,27 @@ loop: 2 app(s) running: rasputin, loop
 | Command | What it does |
 |---|---|
 | `loop` | Start the agent and connect every configured Slack app. |
-| `loop-eval` | Run `evals/golden.json` through the real agent; scores tool selection + reply content; exits non-zero on regression. Flags: `--limit`, `--case`, `--json`. |
+| `cairn-eval` | Run `evals/golden.json` through the real agent; scores tool selection + reply content; exits non-zero on regression. Flags: `--limit`, `--case`, `--json`. |
 
 ---
 
 ## Production harness
 
-Loop ships with the foundations for running an agent in production (see [`progress.md`](progress.md) for the full 5-Pillars roadmap):
+Cairn ships with the foundations for running an agent in production (see [`progress.md`](progress.md) for the full 5-Pillars roadmap):
 
 - **Observability** — every interaction emits a JSON telemetry line + an `interactions` row; every model call, tool call, and reasoning chunk emits a trace + a `steps` row. `LOG_LEVEL=DEBUG` shows full reasoning + tool I/O.
 - **Guardrails** — per-request circuit breakers (max tool calls, repeated calls, token budget) and a destructive-Slack-method blocklist, each toggled by env.
-- **Evaluation** — a golden set + `loop-eval` CI gate so a model/prompt swap can't silently regress quality.
+- **Evaluation** — a golden set + `cairn-eval` CI gate so a model/prompt swap can't silently regress quality.
 
 ---
 
 ## Database
 
-Local **SQLite** at `DATABASE_PATH` (default `./data/loop.db`), no external services. Tables: `memory_entries` (long-term memory — provenance columns `author/channel/team/source/thread_ts/kind` + `metadata` JSON), `memory_fts` (FTS5 mirror for ranked recall), `interactions` (edge telemetry), `steps` (per-step traces), `eval_results` (eval runs), `action_items`. The databases are **runtime state and are not tracked in git** (never `git checkout`/`stash` over a live DB — it swaps the file under the running process); the schema is created and migrated by code on boot. See the ER diagram above.
+Local **SQLite** at `DATABASE_PATH` (default `./data/cairn.db`), no external services. Tables: `memory_entries` (long-term memory — provenance columns `author/channel/team/source/thread_ts/kind` + `metadata` JSON), `memory_fts` (FTS5 mirror for ranked recall), `interactions` (edge telemetry), `steps` (per-step traces), `eval_results` (eval runs), `action_items`. The databases are **runtime state and are not tracked in git** (never `git checkout`/`stash` over a live DB — it swaps the file under the running process); the schema is created and migrated by code on boot. See the ER diagram above.
 
 Memory is **episodic and provenance-stamped**: the `add_memory` tool only carries content, so the store auto-attaches *who said it, in which channel/workspace, via which app, and when* (from the request) — recall can then say "_per @alice in #infra on 2026-06-20_". Default search is **FTS5** (`bm25()` + recency) with a sanitized, injection-safe query and a `LIKE` fallback; exact-duplicate content is de-duped on write. Run the storage tests with `python -m tests.test_memory` (no pytest/key needed).
 
-**Hybrid RAG (optional):** set `LOOP_MEMORY_BACKEND=hybrid` (after `pip install -e ".[vector]"`) to recall over **libSQL/Turso**, fusing FTS5 (lexical) with semantic vector search (`F32_BLOB`/`vector_top_k`) via Reciprocal Rank Fusion — so *"where's the outage runbook?"* finds *"the playbook lives in Notion under SRE"* even with no shared words. Embeddings default to local **`fastembed`** (no API key). See [`docs/vector-memory.md`](docs/vector-memory.md). For the native **Slack AI Assistant** pane, see [`docs/slack-assistant.md`](docs/slack-assistant.md).
+**Hybrid RAG (optional):** set `CAIRN_MEMORY_BACKEND=hybrid` (after `pip install -e ".[vector]"`) to recall over **libSQL/Turso**, fusing FTS5 (lexical) with semantic vector search (`F32_BLOB`/`vector_top_k`) via Reciprocal Rank Fusion — so *"where's the outage runbook?"* finds *"the playbook lives in Notion under SRE"* even with no shared words. Embeddings default to local **`fastembed`** (no API key). See [`docs/vector-memory.md`](docs/vector-memory.md). For the native **Slack AI Assistant** pane, see [`docs/slack-assistant.md`](docs/slack-assistant.md).
 
 ---
 
@@ -307,7 +341,7 @@ loop/
   tracing.py       # step traces (LoopTracer) + reasoning callback
   guardrails.py    # tool-call circuit breakers
   observability.py # interaction/step/eval telemetry + SQLite tables
-  eval.py          # `loop-eval` runner
+  eval.py          # `cairn-eval` runner
 evals/golden.json  # golden eval set
 tests/             # storage-layer tests (memory + hybrid; no pytest/key needed)
 docs/              # vector-memory.md (hybrid RAG) · slack-assistant.md
@@ -319,7 +353,7 @@ progress.md        # status + 5-Pillars roadmap
 
 ## Jira auto-triage
 
-Loop detects bug reports as they're written in Slack — no right-clicking, no forms. The flow:
+Cairn detects bug reports as they're written in Slack — no right-clicking, no forms. The flow:
 
 1. Someone says `@Rasputin_Loop login crashes on mobile — @john should fix this`
 2. Bot detects bug keywords → makes a focused LLM call to extract structured details
@@ -335,7 +369,7 @@ JIRA_API_TOKEN=your-api-token        # https://id.atlassian.com/manage-profile/s
 TOOLSETS=jira_issues                 # limits MCP to 8 tools (keeps context small)
 ```
 
-The project key (`KAN` by default) is set in `LOOP_PERSONA_*` in `.env`. This feature does **not** go through the agent for bug detection or ticket creation — it runs as a deterministic shortcut in `slack_app.py` so it works reliably regardless of model behavior.
+The project key (`KAN` by default) is set in `CAIRN_PERSONA_*` in `.env`. This feature does **not** go through the agent for bug detection or ticket creation — it runs as a deterministic shortcut in `slack_app.py` so it works reliably regardless of model behavior.
 
 ---
 
@@ -343,13 +377,13 @@ The project key (`KAN` by default) is set in `LOOP_PERSONA_*` in `.env`. This fe
 
 ```bash
 # Single server
-LOOP_MCP_SERVERS="uvx mcp-server-fetch" loop
+CAIRN_MCP_SERVERS="uvx mcp-server-fetch" loop
 
 # Multiple servers — semicolon-separated, all loaded on every agent call
-LOOP_MCP_SERVERS="uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio" loop
+CAIRN_MCP_SERVERS="uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio" loop
 
-# Per-app: only Rasputin gets Google Drive tools, Loop gets fetch
-LOOP_MCP_SERVERS="uvx mcp-server-fetch"
-LOOP_MCP_SERVERS_RASPUTIN="uvx mcp-google-drive"
+# Per-app: only Rasputin gets Google Drive tools, Cairn gets fetch
+CAIRN_MCP_SERVERS="uvx mcp-server-fetch"
+CAIRN_MCP_SERVERS_RASPUTIN="uvx mcp-google-drive"
 ```
 The agent enters all MCP contexts per invocation via `contextlib.ExitStack`, merges every server's tools alongside built-ins, and exits cleanly — no code changes needed to add a server. Env vars are forwarded to each subprocess so credentials work.

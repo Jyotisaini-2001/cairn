@@ -1,4 +1,4 @@
-"""Loop's Strands Agent.
+"""Cairn's Strands Agent.
 
 Built per the official Strands Agents README (sdk-python):
 
@@ -21,8 +21,11 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import random
 import re
 import shlex
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,14 +37,15 @@ from strands.tools.mcp import MCPClient
 from strands_tools import calculator, slack, think
 from strands_tools.slack import slack_send_message
 
-from loop.jira_tool import jira_create_issue, jira_search_issues, jira_stage_ticket
+from cairn.decisions import decision_log
+from cairn.jira_tool import jira_create_issue, jira_search_issues, jira_stage_ticket
 
-from loop import context as reqctx
-from loop.guardrails import Guardrails
-from loop.storage import SqliteMemoryStore
-from loop.tracing import LoopTracer, reasoning_callback
+from cairn import context as reqctx
+from cairn.guardrails import Guardrails
+from cairn.storage import SqliteMemoryStore
+from cairn.tracing import LoopTracer, reasoning_callback
 
-log = logging.getLogger("loop.agent")
+log = logging.getLogger("cairn.agent")
 
 _agents: dict[str, Agent] = {}
 
@@ -67,13 +71,13 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 def _model_id() -> str:
-    """The model id, provider-neutral. ``LOOP_MODEL`` wins; ``ANTHROPIC_MODEL`` is
+    """The model id, provider-neutral. ``CAIRN_MODEL`` wins; ``ANTHROPIC_MODEL`` is
     kept as the back-compat fallback (MiniMax M3 sets it today)."""
-    return os.environ.get("LOOP_MODEL") or os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
+    return os.environ.get("CAIRN_MODEL") or os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
 
 
 def _max_tokens() -> int:
-    return int(os.environ.get("LOOP_MAX_TOKENS", "2048"))
+    return int(os.environ.get("CAIRN_MAX_TOKENS", "2048"))
 
 
 def _thinking_params() -> dict[str, Any]:
@@ -82,9 +86,9 @@ def _thinking_params() -> dict[str, Any]:
     MiniMax M3 (and native Claude) only return their reasoning as ``thinking``
     content blocks when the request asks for them — without this param the model
     thinks silently and the `reasoning` telemetry column stays empty. Budget via
-    ``LOOP_THINKING_BUDGET`` (tokens, default 1024; must stay below max_tokens);
+    ``CAIRN_THINKING_BUDGET`` (tokens, default 1024; must stay below max_tokens);
     set it to ``off`` if a provider rejects the param."""
-    raw = os.environ.get("LOOP_THINKING_BUDGET", "1024").strip().lower()
+    raw = os.environ.get("CAIRN_THINKING_BUDGET", "1024").strip().lower()
     if raw in {"off", "false", "no", "0", ""}:
         return {}
     try:
@@ -101,9 +105,9 @@ def _openai_style_client_args() -> dict[str, Any]:
     """Client args for OpenAI-format clients (OpenAI/LiteLLM). Optional — LiteLLM
     also reads provider keys straight from the environment."""
     args: dict[str, Any] = {}
-    if key := (os.environ.get("OPENAI_API_KEY") or os.environ.get("LOOP_LLM_API_KEY")):
+    if key := (os.environ.get("OPENAI_API_KEY") or os.environ.get("CAIRN_LLM_API_KEY")):
         args["api_key"] = key
-    if base := (os.environ.get("OPENAI_BASE_URL") or os.environ.get("LOOP_LLM_BASE_URL")):
+    if base := (os.environ.get("OPENAI_BASE_URL") or os.environ.get("CAIRN_LLM_BASE_URL")):
         args["base_url"] = base
     return args
 
@@ -111,18 +115,18 @@ def _openai_style_client_args() -> dict[str, Any]:
 def _build_model(model_id: str | None = None) -> Any:
     """Construct the Strands model for the configured provider.
 
-    This is Loop's USP made real: the provider is **env-selected** rather than
+    This is Cairn's USP made real: the provider is **env-selected** rather than
     hardcoded, so the same agent can run on Anthropic, MiniMax, OpenAI, Bedrock,
     a LiteLLM multi-provider gateway, or a local Ollama model — no vendor lock-in.
-    ``LOOP_MODEL_PROVIDER`` picks the backend (default ``anthropic``, which keeps
+    ``CAIRN_MODEL_PROVIDER`` picks the backend (default ``anthropic``, which keeps
     the existing MiniMax-M3-via-Anthropic-compatible-endpoint path unchanged).
     Provider SDKs beyond ``anthropic`` are lazy-imported so they're only required
-    when actually selected (install via ``pip install "loop[providers]"``).
+    when actually selected (install via ``pip install "cairn[providers]"``).
 
     ``model_id`` overrides the env model id — used by the ambient loop for cheap
-    background scanning (``LOOP_AMBIENT_MODEL``).
+    background scanning (``CAIRN_AMBIENT_MODEL``).
     """
-    provider = os.environ.get("LOOP_MODEL_PROVIDER", "anthropic").strip().lower()
+    provider = os.environ.get("CAIRN_MODEL_PROVIDER", "anthropic").strip().lower()
     model_id = model_id or _model_id()
     max_tokens = _max_tokens()
 
@@ -165,7 +169,7 @@ def _build_model(model_id: str | None = None) -> Any:
         from strands.models.bedrock import BedrockModel  # noqa: PLC0415
 
         kwargs: dict[str, Any] = {"model_id": model_id, "max_tokens": max_tokens}
-        if region := (os.environ.get("LOOP_BEDROCK_REGION") or os.environ.get("AWS_REGION")):
+        if region := (os.environ.get("CAIRN_BEDROCK_REGION") or os.environ.get("AWS_REGION")):
             kwargs["region_name"] = region
         return BedrockModel(**kwargs)
 
@@ -173,54 +177,47 @@ def _build_model(model_id: str | None = None) -> Any:
     if provider == "ollama":
         from strands.models.ollama import OllamaModel  # noqa: PLC0415
 
-        host = os.environ.get("LOOP_OLLAMA_HOST", "http://localhost:11434")
+        host = os.environ.get("CAIRN_OLLAMA_HOST", "http://localhost:11434")
         return OllamaModel(host=host, model_id=model_id, max_tokens=max_tokens)
 
     if provider == "gemini":
         from strands.models.gemini import GeminiModel  # noqa: PLC0415
 
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        # Gemini's GenerateContentConfig names the cap `max_output_tokens`;
+        # passing `max_tokens` (the Anthropic/OpenAI spelling) is rejected.
         return GeminiModel(
             client_args={"api_key": api_key} if api_key else None,
             model_id=model_id,
-            params={"max_tokens": max_tokens},
+            params={"max_output_tokens": max_tokens},
         )
 
     raise RuntimeError(
-        f"Unknown LOOP_MODEL_PROVIDER={provider!r}. "
+        f"Unknown CAIRN_MODEL_PROVIDER={provider!r}. "
         "Supported: anthropic (default), litellm, openai, bedrock, ollama, gemini."
     )
 
 
-SYSTEM_PROMPT = """You are Loop — a Slack-native AI agent for teams.
+SYSTEM_PROMPT = """You are Cairn — a Slack-native AI agent for teams.
 
-## JIRA INTEGRATION — HIGHEST PRIORITY RULE
-When anyone describes a bug, error, crash, or broken feature, you MUST call
-jira_stage_ticket immediately. This overrides everything else.
-- Do NOT log it as an action item.
-- Do NOT describe what you would do.
-- Do NOT ask clarifying questions first.
-- JUST call jira_stage_ticket with: summary (short title), description (what
-  was reported), issue_type="Bug", priority="High" if users are blocked else
-  "Medium", and slack_mention=the raw "<@UXXXXXXX>" string if someone was
-  @mentioned (else leave it empty).
-- After calling jira_stage_ticket, output ONLY the text the tool returned.
-  Nothing else — no action items, no extra commentary.
+Your job is your team's memory: decisions get made in Slack and then lost in
+Slack, and you make them findable again. A cairn is the stack of stones hikers
+leave on a trail so the next person finds the path — that is what you are for.
+When you answer from memory, always say where it came from (who, which channel,
+when); an answer without its source is a rumour, not evidence.
 
-When you DO file/create a ticket (jira_create_issue), resolve details yourself —
-never bounce a clarifying question back:
-- Assignee: if a person is named — even just a first name like "Jyoti" — pass it
-  as `assignee_name` and pass NOTHING ELSE for the assignee. The tool looks up
-  their email from the workspace member list itself, so NEVER ask the user for
-  someone's email. If it can't be matched, the ticket is filed unassigned and the
-  reply says so.
-- Do NOT pass `slack_mention` for the person who is *asking* (the requester). Only
-  pass `slack_mention` when the ASSIGNEE themselves was @mentioned in the message —
-  passing the requester's `<@id>` there would wrongly assign the ticket to them.
-- Project: pass whatever project the user named (a key like "KAN" or a name like
-  "BAN") as `project_key`. The tool matches it to a real Jira project and falls
-  back to the default if there's no match — so never ask "which project?"; just
-  file it and mention any fallback the tool reports.
+## Jira
+When anyone describes a bug, error, crash, or broken feature, call
+jira_stage_ticket immediately (summary, description, issue_type="Bug",
+priority="High" if users are blocked else "Medium") and output ONLY the text the
+tool returns. Don't ask clarifying questions first.
+
+When filing (jira_create_issue), resolve details yourself — never bounce a
+question back:
+- Assignee: pass a named person as `assignee_name` ("Jyoti") and nothing else —
+  the tool looks up their email. Never pass the *requester's* `slack_mention`.
+- Project: pass whatever the user named as `project_key`; the tool matches it and
+  falls back to the default, so never ask "which project?".
 
 Personality:
 - Concise but warm
@@ -231,9 +228,12 @@ Tools you have:
 - slack + slack_send_message — talk to Slack (any Web API method)
 - search_memory / add_memory — long-term memory (auto-injected before each reply)
 - calculator — math
-- think — structured reasoning for hard problems
 - jira_stage_ticket — stage a Jira ticket for confirmation (CALL THIS for bugs)
 - jira_create_issue — create a Jira issue directly (skip confirmation)
+- decision_log — LIST the team's recorded decisions with their sources. Use it
+  for questions about the record ("what did we decide last week", "recent
+  decisions"), not for "why did we pick X" — that is answered from the memories
+  already in your context.
 - jira_search_issues — search/list Jira issues; pass "bugs" to list all open bugs, "recent"/"all" to list everything, or a text phrase to search
 - fetch (MCP) — fetch any public URL and return its content as text; use this for live pricing, docs, news, or any web lookup
 
@@ -274,20 +274,20 @@ def _mcp_clients(app_name: str | None = None) -> list[MCPClient]:
     """Build MCPClient instances from env.
 
     Reads two env vars (per-app overrides the global):
-      LOOP_MCP_SERVERS            — shared across all apps
-      LOOP_MCP_SERVERS_<APP>      — additional servers for one specific app
+      CAIRN_MCP_SERVERS            — shared across all apps
+      CAIRN_MCP_SERVERS_<APP>      — additional servers for one specific app
 
     Each var is a semicolon-separated list of shell commands, e.g.:
-      LOOP_MCP_SERVERS=uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio
+      CAIRN_MCP_SERVERS=uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio
 
     Returns one MCPClient per entry (empty list if nothing configured).
     """
     specs: list[str] = []
-    global_spec = os.environ.get("LOOP_MCP_SERVERS", "")
+    global_spec = os.environ.get("CAIRN_MCP_SERVERS", "")
     if global_spec.strip():
         specs.extend(s.strip() for s in global_spec.split(";") if s.strip())
     if app_name:
-        app_spec = os.environ.get(f"LOOP_MCP_SERVERS_{app_name.upper()}", "")
+        app_spec = os.environ.get(f"CAIRN_MCP_SERVERS_{app_name.upper()}", "")
         if app_spec.strip():
             specs.extend(s.strip() for s in app_spec.split(";") if s.strip())
 
@@ -296,7 +296,7 @@ def _mcp_clients(app_name: str | None = None) -> list[MCPClient]:
     for spec in specs:
         parts = shlex.split(spec)
         command, args = parts[0], parts[1:]
-        log.info("loop: MCP server registered (command=%s args=%s)", command, args)
+        log.info("cairn: MCP server registered (command=%s args=%s)", command, args)
         # Capture command/args in closure to avoid late-binding over loop variable
         clients.append(
             MCPClient(lambda c=command, a=args: stdio_client(StdioServerParameters(command=c, args=a, env=env)))
@@ -304,15 +304,62 @@ def _mcp_clients(app_name: str | None = None) -> list[MCPClient]:
     return clients
 
 
+# ---------------------------------------------------------------- tool toggles
+# Every tool's schema is re-sent to the model on EVERY request, so an unused tool
+# is a permanent tax on latency and cost (`think` alone is ~2.1k tokens). Rather
+# than delete capabilities, each is a switch: turn one on the day you need it.
+#
+#   CAIRN_TOOLS=slack,jira,calculator      (the default)
+#   CAIRN_TOOLS=slack,jira,calculator,think
+#   CAIRN_TOOLS=slack                      (leanest: memory + Slack only)
+#   CAIRN_TOOLS=none                       (memory only)
+#
+# The memory tools (add_memory / search_memory) are always on — they come from
+# the MemoryManager, and they are the product.
+_TOOL_GROUPS: dict[str, Any] = {
+    "slack": lambda: [slack, slack_send_message],
+    # The decision log is part of the product, not an optional extra — but it is
+    # still a switch, so a lean deployment can drop it.
+    "decisions": lambda: [decision_log],
+    "jira": lambda: [jira_stage_ticket, jira_create_issue, jira_search_issues],
+    "calculator": lambda: [calculator],
+    "think": lambda: [think],
+}
+_DEFAULT_TOOLS = "slack,jira,calculator,decisions"
+
+
+def _enabled_tools() -> list[Any]:
+    """Build the tool list from ``CAIRN_TOOLS`` (comma-separated group names).
+
+    Unknown names are logged and skipped rather than raising, so a typo degrades
+    to a missing tool instead of a dead bot."""
+    raw = os.environ.get("CAIRN_TOOLS", _DEFAULT_TOOLS).strip()
+    if raw.lower() in {"none", "off", ""}:
+        names: list[str] = []
+    else:
+        names = [n.strip().lower() for n in raw.split(",") if n.strip()]
+
+    tools: list[Any] = []
+    for name in names:
+        group = _TOOL_GROUPS.get(name)
+        if group is None:
+            log.warning("CAIRN_TOOLS: unknown tool group %r (known: %s)",
+                        name, ", ".join(sorted(_TOOL_GROUPS)))
+            continue
+        tools.extend(group())
+    log.info("tools enabled: %s", ", ".join(names) or "(memory only)")
+    return tools
+
+
 def _system_prompt(app_name: str | None) -> str:
-    """Base persona, plus an optional per-app override from LOOP_PERSONA_<NAME>.
+    """Base persona, plus an optional per-app override from CAIRN_PERSONA_<NAME>.
 
     This is the seam for giving each Slack app its own behavior: set e.g.
-    LOOP_PERSONA_RASPUTIN="You are the on-call incident assistant ..." and only
+    CAIRN_PERSONA_RASPUTIN="You are the on-call incident assistant ..." and only
     the `rasputin` app's agent picks it up. Unset → the shared base persona.
     """
     if app_name:
-        persona = os.environ.get(f"LOOP_PERSONA_{app_name.upper()}")
+        persona = os.environ.get(f"CAIRN_PERSONA_{app_name.upper()}")
         if persona and persona.strip():
             return f"{SYSTEM_PROMPT}\n\n## This app's specific role\n{persona.strip()}"
     return SYSTEM_PROMPT
@@ -347,12 +394,12 @@ def _memory_store() -> Any:
 
     Default ``sqlite`` = the FTS5 + provenance store (no deps, no key). ``hybrid``
     (aliases: ``libsql``/``turso``/``vector``) = the libSQL/Turso hybrid store
-    (FTS5 + semantic vectors, RRF-fused); needs ``pip install "loop[vector]"`` and
+    (FTS5 + semantic vectors, RRF-fused); needs ``pip install "cairn[vector]"`` and
     raises a clear error if missing, so the choice is explicit.
     """
-    backend = os.environ.get("LOOP_MEMORY_BACKEND", "sqlite").strip().lower()
+    backend = os.environ.get("CAIRN_MEMORY_BACKEND", "sqlite").strip().lower()
     if backend in {"hybrid", "libsql", "turso", "vector"}:
-        from loop.vector_store import HybridMemoryStore  # noqa: PLC0415 (optional path)
+        from cairn.vector_store import HybridMemoryStore  # noqa: PLC0415 (optional path)
 
         log.info("memory backend: libsql/turso hybrid (FTS5 + semantic vectors, RRF-fused)")
         return HybridMemoryStore()
@@ -384,13 +431,154 @@ def remember(content: str, *, context: dict[str, Any] | None = None,
         reqctx.reset_current(token)
 
 
+# ── Resilience ───────────────────────────────────────────────────────────────
+# A provider hiccup used to reach the user as silence: MiniMax started returning
+# 429s and Cairn simply never replied (the SDK retried twice, gave up, and the
+# exception surfaced as a bare stack trace). Transient failures now get bounded
+# retries with exponential backoff + jitter, and a caller can tell a transient
+# failure from a real one so the reply can say which.
+#
+#   CAIRN_MODEL_RETRIES=2        extra attempts after the first  (0 = off)
+#   CAIRN_MODEL_RETRY_BASE_MS=600  first backoff; doubles each attempt
+_RETRYABLE_MARKERS = (
+    "429", "rate limit", "rate_limit", "too many requests", "quota",
+    "usage limit", "limit reached", "resource exhausted", "resource_exhausted",
+    "500", "502", "503", "504", "overloaded", "unavailable", "internal error",
+    "timeout", "timed out", "connection reset", "connection error",
+    "temporarily", "try again",
+)
+
+
+# Providers often say exactly how long to wait — Gemini returns
+# `"retryDelay": "29s"` on a 429, Anthropic/OpenAI use Retry-After. Ignoring it
+# and backing off 0.6s for a 30s window just burns the remaining attempts, which
+# is precisely what happened on the Gemini free tier (20 req/min).
+_RETRY_HINT_RE = re.compile(
+    r"(?:retrydelay\"?\s*[:=]\s*\"?|retry-after\"?\s*[:=]\s*\"?|retry in\s+)"
+    r"(\d+(?:\.\d+)?)\s*s?\b", re.IGNORECASE)
+
+
+def _retry_hint_s(err: BaseException) -> float | None:
+    """Seconds the provider asked us to wait, if it said so."""
+    m = _RETRY_HINT_RE.search(str(err))
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+def _max_backoff_s() -> float:
+    """Ceiling on a single wait. A provider hint of 10 minutes is not worth
+    holding a Slack turn open for; we give up and say so instead."""
+    try:
+        return max(1.0, float(os.environ.get("CAIRN_MODEL_RETRY_MAX_S", "45")))
+    except ValueError:
+        return 45.0
+
+
+class TransientModelError(RuntimeError):
+    """The model call failed in a way that is worth retrying later.
+
+    Raised after retries are exhausted so the Slack layer can say "busy, try
+    again" instead of showing a stack trace."""
+
+
+class QuotaExhaustedError(TransientModelError):
+    """The account's quota is spent — a longer wait will not help today.
+
+    Subclasses TransientModelError so existing handling keeps working, but the
+    Slack layer can say something true ("today's quota") rather than "busy".""" 
+
+
+# Some 429s are not worth waiting for. A per-minute rate limit clears in seconds;
+# a per-DAY quota does not clear today, and Gemini still returns a ~60s
+# retryDelay with it. Honouring that burned a minute per case in an eval run
+# before failing anyway. Fail fast instead, so the caller sees the real problem.
+_EXHAUSTED_MARKERS = ("perday", "per day", "requestsperday", "daily limit",
+                      "quota exceeded for metric", "billing")
+
+
+def _is_exhausted(err: BaseException) -> bool:
+    text = f"{err}".lower().replace("_", "").replace("-", "")
+    return any(m.replace("_", "").replace("-", "") in text for m in _EXHAUSTED_MARKERS)
+
+
+def _is_transient(err: BaseException) -> bool:
+    """Classify by message text, not exception type: each provider SDK raises its
+    own class (anthropic.RateLimitError, google ClientError, httpx timeouts), and
+    we deliberately do not import every SDK to catch them."""
+    if _is_exhausted(err):
+        return False        # waiting cannot help; surface it now
+    text = f"{type(err).__name__} {err}".lower()
+    return any(m in text for m in _RETRYABLE_MARKERS)
+
+
+def _retries() -> int:
+    try:
+        return max(0, int(os.environ.get("CAIRN_MODEL_RETRIES", "2")))
+    except ValueError:
+        return 2
+
+
+def _retry_base_s() -> float:
+    try:
+        return max(0.0, float(os.environ.get("CAIRN_MODEL_RETRY_BASE_MS", "600")) / 1000)
+    except ValueError:
+        return 0.6
+
+
+_agent_lock = threading.Lock()
+
+
+def _invoke(agent: Agent, message: Any) -> Any:
+    """Run one agent turn, retrying transient provider failures with backoff.
+
+    A non-transient error (bad request, auth, a bug in a tool) is re-raised
+    immediately — retrying those just multiplies the damage.
+
+    **Each turn starts from a clean slate.** A Strands ``Agent`` accumulates
+    ``messages`` across calls, and ours is cached per app — so without this reset
+    one cached agent would carry every user's turns from every channel into every
+    subsequent request: cross-channel leakage, and a prompt that grows without
+    bound until it blows the context window. Continuity comes from the *thread*
+    context (correctly scoped to one Slack thread) and long-term memory, not from
+    a shared in-process transcript. The lock keeps the reset and the turn atomic
+    now that Slack events are handled off the socket thread.
+    """
+    attempts = _retries() + 1
+    last: BaseException | None = None
+    for i in range(attempts):
+        try:
+            with _agent_lock:
+                agent.messages = []
+                return agent(message)
+        except BaseException as err:  # noqa: BLE001 - classified below, re-raised
+            last = err
+            if _is_exhausted(err):
+                # Not worth a single retry: this resets on a clock, not a timer.
+                raise QuotaExhaustedError(str(err)) from err
+            if not _is_transient(err):
+                raise
+            if i == attempts - 1:
+                break
+            # Prefer what the provider told us; fall back to exponential backoff.
+            hint = _retry_hint_s(err)
+            delay = hint if hint is not None else _retry_base_s() * (2 ** i)
+            delay = min(delay, _max_backoff_s()) * (1 + random.random() * 0.1)
+            log.warning("transient model error (attempt %d/%d), retrying in %.1fs: %s",
+                        i + 1, attempts, delay, err)
+            time.sleep(delay)
+    raise TransientModelError(str(last)) from last
+
+
 def _build_agent(app_name: str | None = None, model_id: str | None = None) -> Agent:
     """Build an agent for one app. Caller is responsible for holding any MCP context.
 
     ``model_id`` overrides the env model — used for cost-routed background runs.
     """
-    tools: list[Any] = [slack, slack_send_message, calculator, think,
-                        jira_stage_ticket, jira_create_issue, jira_search_issues]
+    tools: list[Any] = _enabled_tools()
 
     memory_manager = MemoryManager(
         stores=[_memory_store()],
@@ -422,7 +610,7 @@ def get_agent(app_name: str | None = None, model_id: str | None = None) -> Agent
     if agent is None:
         agent = _build_agent(app_name, model_id)
         _agents[key] = agent
-        log.info("loop agent initialised (app=%s)", key)
+        log.info("cairn agent initialised (app=%s)", key)
     return agent
 
 
@@ -458,7 +646,7 @@ def run(
     try:
         clients = _mcp_clients(app_name)
         if not clients:
-            return _result_to_run(get_agent(app_name, model_id)(message), state)
+            return _result_to_run(_invoke(get_agent(app_name, model_id), message), state)
         with contextlib.ExitStack() as stack:
             for c in clients:
                 stack.enter_context(c)
@@ -467,7 +655,7 @@ def run(
                 tools.extend(c.list_tools_sync())
             agent = _build_agent(app_name, model_id)
             agent.tool_registry.process_tools(tools)
-            return _result_to_run(agent(message), state)
+            return _result_to_run(_invoke(agent, message), state)
     finally:
         reqctx.reset_current(token)
 
@@ -483,6 +671,13 @@ def _apply_provenance(state: reqctx.RequestState, context: dict[str, Any] | None
 
 
 def _with_context(prompt: str, context: dict[str, Any] | None) -> str:
+    """Prefix the request with who/where, plus the recent turns of this thread.
+
+    The thread block is what makes a follow-up ("what about the second one?")
+    resolvable — long-term memory holds durable facts, not the last three
+    messages. It is rendered as plain labelled lines rather than a chat
+    transcript so the model cannot mistake it for its own instructions.
+    """
     if not context:
         return prompt
     bits: list[str] = []
@@ -492,9 +687,25 @@ def _with_context(prompt: str, context: dict[str, Any] | None) -> str:
         bits.append(f"in channel <#{context['channel']}>")
     if context.get("channel_type"):
         bits.append(f"({context['channel_type']})")
-    if not bits:
-        return prompt
-    return f"[context] message {' '.join(bits)}\n\n{prompt}"
+
+    header = f"[context] message {' '.join(bits)}" if bits else ""
+    thread = _format_thread(context.get("thread"))
+    preamble = "\n\n".join(p for p in (header, thread) if p)
+    return f"{preamble}\n\n{prompt}" if preamble else prompt
+
+
+def _format_thread(turns: Any) -> str:
+    """Render prior thread turns for the prompt. ``turns`` is a list of
+    ``{"speaker", "text"}`` oldest-first, already bounded by the caller."""
+    if not turns:
+        return ""
+    lines = [f"{t.get('speaker', '?')}: {t.get('text', '')}" for t in turns
+             if t.get("text")]
+    if not lines:
+        return ""
+    body = "\n".join(lines)
+    return ("[thread so far — earlier messages in this Slack thread, oldest "
+            f"first; 'you' is Cairn]\n{body}")
 
 
 # Slack mimetype → Strands image block format. Anything not listed (text/code/

@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 def _fresh_db() -> str:
-    import loop.observability as obs
+    import cairn.observability as obs
 
     path = str(Path(tempfile.mkdtemp()) / "obs.db")
     os.environ["DATABASE_PATH"] = path
@@ -26,7 +26,7 @@ def _fresh_db() -> str:
 
 
 def test_execute_write_roundtrip() -> None:
-    import loop.observability as obs
+    import cairn.observability as obs
 
     _fresh_db()
     obs._execute_write(
@@ -51,7 +51,7 @@ class _FailOnceConn(sqlite3.Connection):
 
 
 def test_execute_write_reconnects_on_operationalerror() -> None:
-    import loop.observability as obs
+    import cairn.observability as obs
 
     path = _fresh_db()  # schema created on a normal conn
     # Swap the cached handle for one rigged to fail its first write.
@@ -71,7 +71,7 @@ def test_execute_write_reconnects_on_operationalerror() -> None:
 
 
 def test_record_step_swallows_persistent_failure() -> None:
-    import loop.observability as obs
+    import cairn.observability as obs
 
     _fresh_db()
 
@@ -92,7 +92,7 @@ def test_record_step_swallows_persistent_failure() -> None:
 
 
 def test_reset_conn_safe_when_none() -> None:
-    import loop.observability as obs
+    import cairn.observability as obs
 
     obs._conn = None
     obs._reset_conn()  # must not raise

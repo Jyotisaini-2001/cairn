@@ -1,10 +1,13 @@
-# CLAUDE.md — Loop project harness
+# CLAUDE.md — Cairn project harness
 
 This file is auto-loaded each Claude Code session. It is the **entry point** for
 cross-session continuity. Read the linked docs before doing substantive work.
 
 ## Read first (cross-session memory)
-1. **`architecture.md`** — how Loop is wired (runtime flow, components, the
+0. **`DIRECTION.md`** — the single committed direction (organizational memory:
+   "decisions are made in Slack and lost in Slack"). Read it first; it is the
+   tie-breaker when a change could pull the project sideways.
+1. **`architecture.md`** — how Cairn is wired (runtime flow, components, the
    SQLite memory store, the model-provider env contract).
 2. **`progress.md`** — current status, the MiniMax M3 migration checklist, and
    the production roadmap mapped to the 5 Pillars of Production AI.
@@ -15,7 +18,7 @@ cross-session continuity. Read the linked docs before doing substantive work.
 the wiring changed, `architecture.md`.** Keep these honest — they are what the
 next session relies on.
 
-## What Loop is
+## What Cairn is
 A Slack-native AI agent on Strands Agents. One Strands agent is the only brain;
 two Slack entrypoints (`@mention`, `/loop`). Tools: `slack`, `slack_send_message`,
 `calculator`, `think`, plus long-term memory and optional MCP servers.
@@ -26,27 +29,43 @@ two Slack entrypoints (`@mention`, `/loop`). Tools: `slack`, `slack_send_message
   Anthropic SDK, so this is **env-only — no code change**. Switch back to native
   Anthropic by changing env. Get a MiniMax key at
   https://www.minimax.io/platform/user-center/basic-information.
-- **Database = local SQLite** (`DATABASE_PATH`, default `./data/loop.db`); single
+- **Database = local SQLite** (`DATABASE_PATH`, default `./data/cairn.db`); single
   `memory_entries` table; `LIKE` substring search; `metadata` is dropped; memory
   is currently **global** (no per-team/user scoping).
 - **Transport = Slack Socket Mode** — each app needs a bot token (xoxb) + an
   app-level token (xapp). **Multi-app:** one process runs N apps via
   `SLACK_BOT_TOKEN_<NAME>`/`SLACK_APP_TOKEN_<NAME>` pairs (bare
   `SLACK_BOT_TOKEN`/`SLACK_APP_TOKEN` still works as one app). Per-app behavior via
-  `LOOP_PERSONA_<NAME>`. The running app's identity is decided by which tokens are
-  loaded — verify with `auth.test`. The workspace has two apps: `Loop`
+  `CAIRN_PERSONA_<NAME>`. The running app's identity is decided by which tokens are
+  loaded — verify with `auth.test`. The workspace has two apps: `Cairn`
   (`A0BC0NPB9LN`) and `Rasputin_Loop` (`A0BCVHES936`); the user wants BOTH to run.
 - A Socket Mode app needs **Event Subscriptions** (`app_mention`, `message.im`)
   configured per app, or it connects but receives no events ("silent bot").
-- Entry: `loop/main.py` → `slack_app.start()`. Agent: `loop/agent.py::run()`.
+- Entry: `cairn/main.py` → `slack_app.start()`. Agent: `cairn/agent.py::run()`.
 
 ## Run
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
-cp .env.example .env   # fill in Slack tokens + MiniMax key
-loop
+pip install -e ".[vector]"
+cp .env.example .env   # fill in Slack tokens + a model key
+cairn
 ```
+
+**Known trap — the editable install.** Hatchling writes its path file to
+`.venv/lib/python3.12/site-packages/_editable_impl_cairn.pth`, and on this setup
+`site.py` does not apply it: `pip list` shows the package installed and
+`import cairn` works *from the repo directory* (cwd is on the path), so nothing
+looks wrong until a console script — `cairn`, `cairn-eval`, `cairn-backfill` —
+fails with `ModuleNotFoundError` from anywhere else. Fix:
+
+```bash
+sp=.venv/lib/python3.12/site-packages
+rm -f $sp/_editable_impl_cairn.pth
+printf '%s\n' "$(pwd)" > $sp/cairn-dev-path.pth
+```
+
+Also note **moving the project folder breaks the venv** — venv scripts hardcode
+their absolute path in the shebang. Delete and recreate it after any move.
 
 ## Git identity (IMPORTANT)
 - **Commit as `Jyoti Saini <sainijyoti042002@gmail.com>`.** This is the repo-local

@@ -1,7 +1,7 @@
 """Tests for the hybrid (lexical + semantic) libSQL/Turso memory store.
 
 Skips libSQL/fastembed cases cleanly when those optional extras aren't installed
-(`pip install "loop[vector]"`). The RRF unit test always runs.
+(`pip install "cairn[vector]"`). The RRF unit test always runs.
 
     python -m tests.test_vector_memory
 """
@@ -23,19 +23,19 @@ try:
 except ImportError:
     HAVE_FASTEMBED = False
 
-from loop import context as reqctx
+from cairn import context as reqctx
 
 
 def _store(embedder=None):
-    from loop.embeddings import HashingEmbedder
-    from loop.vector_store import HybridMemoryStore
+    from cairn.embeddings import HashingEmbedder
+    from cairn.vector_store import HybridMemoryStore
 
     db = Path(tempfile.mkdtemp()) / "vec.db"
     return HybridMemoryStore(db_path=str(db), embedder=embedder or HashingEmbedder(dim=256))
 
 
 def test_rrf_fuse_orders_by_combined_rank() -> None:
-    from loop.vector_store import _rrf_fuse
+    from cairn.vector_store import _rrf_fuse
 
     lexical = [10, 20, 30]   # 20 is #2 here
     semantic = [40, 20, 50]  # 20 is #2 here too → strong on both → should win
@@ -72,7 +72,7 @@ def test_hybrid_semantic_recall_no_shared_words() -> None:
     if not (HAVE_LIBSQL and HAVE_FASTEMBED):
         print("  SKIP  needs libsql + fastembed (pip install 'loop[vector]')")
         return
-    from loop.embeddings import FastEmbedEmbedder
+    from cairn.embeddings import FastEmbedEmbedder
 
     store = _store(embedder=FastEmbedEmbedder())
     asyncio.run(store.add("The on-call playbook lives in Notion under SRE."))

@@ -3,12 +3,12 @@
 Implements the Strands `MemoryStore` Protocol so the agent's long-term memory
 lives in a local SQLite database. No external services, no API keys required.
 
-What this store gives Loop beyond a flat key-value of facts:
+What this store gives Cairn beyond a flat key-value of facts:
 
 * **Provenance on every memory.** The `add_memory` tool only lets the model pass
   *content* — it cannot attach metadata. So we stamp each saved memory with *who*
-  said it, in *which channel / workspace*, via *which Loop app*, and *when*,
-  pulled from the active request (`loop.context.RequestState`). This is what makes
+  said it, in *which channel / workspace*, via *which Cairn app*, and *when*,
+  pulled from the active request (`cairn.context.RequestState`). This is what makes
   a saved episode auditable and what lets recall say "decided by @alice in #infra
   on 2026-06-20" instead of a context-free sentence.
 * **Full-text recall (FTS5).** Search is an FTS5 `MATCH` (ranked by BM25, then
@@ -37,11 +37,12 @@ from typing import Any
 
 from strands.memory.types import MemoryEntry, SearchOptions
 
-from loop import context as reqctx
+from cairn import context as reqctx
+from cairn.redact import redact
 
-log = logging.getLogger("loop.memory")
+log = logging.getLogger("cairn.memory")
 
-DEFAULT_DB_PATH = "./data/loop.db"
+DEFAULT_DB_PATH = "./data/cairn.db"
 
 # Provenance keys we promote to dedicated, queryable columns. Everything else a
 # caller passes in `metadata` is preserved in the JSON blob.
@@ -65,7 +66,7 @@ def _scope_clause(prefix: str = "") -> tuple[str, tuple[str, ...]]:
 
     Returns ``("", ())`` for global recall. ``prefix`` qualifies the column for a
     join (e.g. ``"m."``). Reads the scope from the active request via
-    ``loop.context.memory_scope`` — the Strands MemoryManager forwards no custom
+    ``cairn.context.memory_scope`` — the Strands MemoryManager forwards no custom
     search fields, so scope is read here (mirroring how ``add()`` reads provenance)."""
     scope = reqctx.memory_scope()
     if not scope:
@@ -94,11 +95,11 @@ def _fts_match(query: str) -> str | None:
 
 
 class SqliteMemoryStore:
-    """Long-term, provenance-stamped, full-text-searchable memory for Loop."""
+    """Long-term, provenance-stamped, full-text-searchable memory for Cairn."""
 
     name = "loop_memory"
     description = (
-        "Loop's persistent memory of crucial facts, decisions, preferences, and "
+        "Cairn's persistent memory of crucial facts, decisions, preferences, and "
         "episodes — each stamped with who said it, where, and when."
     )
     max_search_results = 5
@@ -106,12 +107,12 @@ class SqliteMemoryStore:
     extraction = False  # the agent decides what is worth remembering via add_memory
 
     def __init__(self, db_path: str | None = None) -> None:
-        # Memory can live in its own file (LOOP_MEMORY_DB_PATH); otherwise it
-        # shares DATABASE_PATH with telemetry. The split lets `loop-eval` point
+        # Memory can live in its own file (CAIRN_MEMORY_DB_PATH); otherwise it
+        # shares DATABASE_PATH with telemetry. The split lets `cairn-eval` point
         # memory at a throwaway DB while still persisting eval_results to the real one.
         self.db_path = (
             db_path
-            or os.environ.get("LOOP_MEMORY_DB_PATH")
+            or os.environ.get("CAIRN_MEMORY_DB_PATH")
             or os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
         )
         _ensure_parent(self.db_path)
@@ -254,6 +255,8 @@ class SqliteMemoryStore:
 
     # --- write -------------------------------------------------------------
     async def add(self, content: str, metadata: Any = None) -> int:
+        # Strip credentials before they reach the database — see cairn/redact.py.
+        content, redacted = redact(content)
         """Persist a memory, auto-stamping provenance from the active request.
 
         `metadata` (when a caller passes a dict) is merged over the request's
@@ -265,6 +268,8 @@ class SqliteMemoryStore:
         state = reqctx.current()
         if state is not None:
             merged.update(state.provenance())
+        if redacted:
+            merged["redacted"] = redacted
         if isinstance(metadata, dict):
             merged.update(metadata)
         elif metadata is not None:

@@ -1,4 +1,4 @@
-"""Step-level tracing for Loop (Pillar 02 — observability).
+"""Step-level tracing for Cairn (Pillar 02 — observability).
 
 Turns each agent invocation from a black box into a visible sequence of steps:
 the model's *thinking*, every *model API call*, and every *tool call* with its
@@ -6,11 +6,11 @@ inputs/outputs. Implemented as a Strands `HookProvider` plus a reasoning
 callback, so it observes the real event loop without changing behaviour.
 
 Each step is:
-  - logged as one JSON line on the ``loop.trace`` logger (compact at INFO, with
+  - logged as one JSON line on the ``cairn.trace`` logger (compact at INFO, with
     full reasoning + tool I/O at DEBUG / ``LOG_LEVEL=DEBUG``), and
   - persisted via ``observability.record_step`` to the ``steps`` table.
 
-Set ``LOOP_TRACE=off`` to silence the log lines (rows are still written).
+Set ``CAIRN_TRACE=off`` to silence the log lines (rows are still written).
 
 The tracer also OWNS the per-request counters in `RequestState` (model_calls,
 tool_calls, tool_hashes, tokens, reasoning). The guardrails read those counters
@@ -34,16 +34,16 @@ from strands.hooks import (
     HookRegistry,
 )
 
-from loop import context
-from loop import observability as obs
+from cairn import context
+from cairn import observability as obs
 
-log = logging.getLogger("loop.trace")
+log = logging.getLogger("cairn.trace")
 
 _DETAIL_MAX = 800
 
 
 def _trace_enabled() -> bool:
-    return os.environ.get("LOOP_TRACE", "on").strip().lower() not in {"off", "0", "false", "no"}
+    return os.environ.get("CAIRN_TRACE", "on").strip().lower() not in {"off", "0", "false", "no"}
 
 
 def tool_signature(name: str, tool_input: Any) -> str:
