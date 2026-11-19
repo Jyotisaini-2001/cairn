@@ -17,7 +17,7 @@ a memory stamped with its author, channel and date.
 you:   @Cairn why did we pick Postgres?
 
 Cairn: Postgres for billing, because Mongo's transactions were flaky; the team
-       accepted a migration cost to get correctness.
+       accepted a mi agration cost to get correctness.
        — @rahul in #eng on 12 March 2026
 ```
 
@@ -76,7 +76,7 @@ Two self-contained HTML pages live in [`docs/`](docs/) (open them directly in a 
 ```mermaid
 flowchart LR
     subgraph Slack["Slack (Socket Mode)"]
-        M["@mention"]; DM["DM"]; SL["/loop"]; AP["AI Assistant pane"]
+        M["@mention"]; DM["DM"]; SL["/cairn"]; AP["AI Assistant pane"]
     end
     subgraph Proc["one Python process"]
         H["slack_app.py<br/>N Bolt apps, one per token pair"]
@@ -120,7 +120,7 @@ erDiagram
         int id PK
         text request_id
         int ts
-        text entrypoint "app:kind e.g. rasputin:app_mention"
+        text entrypoint "app:kind e.g. ops:app_mention"
         text team
         text channel
         text user
@@ -198,21 +198,21 @@ Reciprocal Rank Fusion at query time.
 
 ---
 
-## Multi-app support (Cairn + Rasputin_Loop)
+## Multi-app support
 
 Cairn can run **one or many** Slack apps in a single process. Each configured app gets its own Bolt App, its own Socket Mode connection (own thread), and its own agent — but they share code, memory, and telemetry.
 
-- **One app (back-compat):** set the bare `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (label it with `SLACK_APP_NAME`, default `loop`).
+- **One app (back-compat):** set the bare `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (label it with `SLACK_APP_NAME`, default `main`).
 - **Many apps:** add a `SLACK_BOT_TOKEN_<NAME>` + `SLACK_APP_TOKEN_<NAME>` pair per app.
 
 Give each app a different job with **`CAIRN_PERSONA_<NAME>`**, which is appended to that app's system prompt:
 
 ```bash
-CAIRN_PERSONA_LOOP=You are the team's general assistant.
-CAIRN_PERSONA_RASPUTIN=You are the on-call incident assistant; be terse and precise.
+CAIRN_PERSONA_MAIN=You are the team's general assistant.
+CAIRN_PERSONA_OPS=You are the on-call incident assistant; be terse and precise.
 ```
 
-Telemetry tags every interaction `"<app>:<entrypoint>"` (e.g. `rasputin:app_mention`) so the apps stay distinguishable.
+Telemetry tags every interaction `"<app>:<entrypoint>"` (e.g. `ops:app_mention`) so the apps stay distinguishable.
 
 ---
 
@@ -263,13 +263,13 @@ cp .env.example .env
 # ── Single app ──
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
-SLACK_APP_NAME=loop
+SLACK_APP_NAME=main
 
 # ── Or multiple apps ──
-SLACK_BOT_TOKEN_LOOP=xoxb-...
-SLACK_APP_TOKEN_LOOP=xapp-...
-SLACK_BOT_TOKEN_RASPUTIN=xoxb-...
-SLACK_APP_TOKEN_RASPUTIN=xapp-...
+SLACK_BOT_TOKEN_MAIN=xoxb-...
+SLACK_APP_TOKEN_MAIN=xapp-...
+SLACK_BOT_TOKEN_OPS=xoxb-...
+SLACK_APP_TOKEN_OPS=xapp-...
 
 # ── Model: MiniMax M3 via the Anthropic-compatible endpoint ──
 ANTHROPIC_API_KEY=                 # your MiniMax key (or ANTHROPIC_AUTH_TOKEN)
@@ -288,9 +288,9 @@ See [`.env.example`](.env.example) for every knob (personas, guardrails, observa
 loop
 ```
 ```
-loop: Slack app 'rasputin' connected (socket mode)
-loop: Slack app 'loop' connected (socket mode)
-loop: 2 app(s) running: rasputin, loop
+loop: Slack app 'ops' connected (socket mode)
+loop: Slack app 'main' connected (socket mode)
+loop: 2 app(s) running: ops, main
 ```
 
 ---
@@ -355,10 +355,10 @@ progress.md        # status + 5-Pillars roadmap
 
 Cairn detects bug reports as they're written in Slack — no right-clicking, no forms. The flow:
 
-1. Someone says `@Rasputin_Loop login crashes on mobile — @john should fix this`
+1. Someone says `@Cairn login crashes on mobile — @john should fix this`
 2. Bot detects bug keywords → makes a focused LLM call to extract structured details
 3. Shows confirmation: title, type, priority, assignee
-4. User replies `@Rasputin_Loop yes`
+4. User replies `@Cairn yes`
 5. Ticket created in Jira, assigned to John (resolved via Slack email → Jira account ID)
 
 ```dotenv
@@ -382,8 +382,8 @@ CAIRN_MCP_SERVERS="uvx mcp-server-fetch" loop
 # Multiple servers — semicolon-separated, all loaded on every agent call
 CAIRN_MCP_SERVERS="uvx mcp-server-fetch;uvx mcp-atlassian --transport stdio" loop
 
-# Per-app: only Rasputin gets Google Drive tools, Cairn gets fetch
+# Per-app: only the ops app gets Google Drive tools, the main app gets fetch
 CAIRN_MCP_SERVERS="uvx mcp-server-fetch"
-CAIRN_MCP_SERVERS_RASPUTIN="uvx mcp-google-drive"
+CAIRN_MCP_SERVERS_OPS="uvx mcp-google-drive"
 ```
 The agent enters all MCP contexts per invocation via `contextlib.ExitStack`, merges every server's tools alongside built-ins, and exits cleanly — no code changes needed to add a server. Env vars are forwarded to each subprocess so credentials work.
